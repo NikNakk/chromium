@@ -34,6 +34,8 @@ struct OpenXrSwapchainInfo {
   explicit OpenXrSwapchainInfo(uint32_t texture);
 #elif BUILDFLAG(IS_LINUX)
   explicit OpenXrSwapchainInfo(VkImage vk_image);
+#elif BUILDFLAG(IS_MAC)
+  explicit OpenXrSwapchainInfo(void* metal_texture);
 #endif
   OpenXrSwapchainInfo();
   virtual ~OpenXrSwapchainInfo();
@@ -58,6 +60,9 @@ struct OpenXrSwapchainInfo {
 #elif BUILDFLAG(IS_LINUX)
   // The Vulkan image handle from the OpenXR swapchain.
   VkImage vk_image = VK_NULL_HANDLE;
+#elif BUILDFLAG(IS_MAC)
+  // Runtime-owned id<MTLTexture>, kept opaque so this header remains C++.
+  void* metal_texture = nullptr;
 #elif BUILDFLAG(IS_ANDROID)
   // Ideally this would be a gluint, but there are conflicting headers for GL
   // depending on *how* you want to use it; so we can't use it at the moment.

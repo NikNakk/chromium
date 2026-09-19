@@ -8,8 +8,8 @@
 #include <vector>
 
 #include "base/logging.h"
+#include "device/vr/openxr/mac/openxr_graphics_binding_metal.h"
 #include "device/vr/openxr/openxr_api_wrapper.h"
-#include "device/vr/openxr/openxr_graphics_binding.h"
 #include "device/vr/public/mojom/isolated_xr_service.mojom.h"
 
 namespace device {
@@ -39,11 +39,8 @@ bool OpenXrPlatformHelperMac::Initialize() {
 
 std::unique_ptr<OpenXrGraphicsBinding>
 OpenXrPlatformHelperMac::GetGraphicsBinding() {
-  // Runtime discovery is useful before the Metal graphics binding is complete.
-  // Returning nullptr makes an immersive-session request fail cleanly in the
-  // render loop rather than pretending that rendering is available.
-  DVLOG(1) << "OpenXR Metal graphics binding is not implemented yet";
-  return nullptr;
+  return std::make_unique<OpenXrGraphicsBindingMetal>(
+      GetExtensionEnumeration());
 }
 
 void OpenXrPlatformHelperMac::GetPlatformCreateInfo(

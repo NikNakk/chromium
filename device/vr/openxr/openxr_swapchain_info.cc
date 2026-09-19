@@ -20,6 +20,9 @@ OpenXrSwapchainInfo::OpenXrSwapchainInfo(uint32_t texture)
 #elif BUILDFLAG(IS_LINUX)
 OpenXrSwapchainInfo::OpenXrSwapchainInfo(VkImage vk_image)
     : vk_image(vk_image) {}
+#elif BUILDFLAG(IS_MAC)
+OpenXrSwapchainInfo::OpenXrSwapchainInfo(void* metal_texture)
+    : metal_texture(metal_texture) {}
 #endif
 
 OpenXrSwapchainInfo::OpenXrSwapchainInfo() = default;
