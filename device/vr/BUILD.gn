@@ -326,6 +326,14 @@ if (enable_vr) {
         ]
       }
 
+      if (is_mac) {
+        sources += [
+          "openxr/mac/openxr_graphics_binding_metal.cc",
+          "openxr/mac/openxr_platform_helper_mac.cc",
+          "openxr/mac/openxr_platform_helper_mac.h",
+        ]
+      }
+
       deps += [
         ":openxr_data",
         "//components/version_info",

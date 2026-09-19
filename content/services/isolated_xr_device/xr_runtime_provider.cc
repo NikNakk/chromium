@@ -14,10 +14,14 @@
 #include "device/vr/buildflags/buildflags.h"
 #include "device/vr/public/cpp/features.h"
 
-#if BUILDFLAG(ENABLE_OPENXR) && BUILDFLAG(IS_WIN)
+#if BUILDFLAG(ENABLE_OPENXR) && (BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC))
 #include "content/public/common/gpu_stream_constants.h"
 #include "device/vr/openxr/openxr_device.h"
+#if BUILDFLAG(IS_WIN)
 #include "device/vr/openxr/windows/openxr_platform_helper_windows.h"
+#elif BUILDFLAG(IS_MAC)
+#include "device/vr/openxr/mac/openxr_platform_helper_mac.h"
+#endif
 #include "services/viz/public/cpp/gpu/context_provider_command_buffer.h"
 #endif
 
@@ -98,7 +102,7 @@ void IsolatedXRRuntimeProvider::PollForDeviceChanges() {
   // 'preferred_device_enabled' being unused, thus [[maybe_unused]].
   [[maybe_unused]] bool preferred_device_enabled = false;
 
-#if BUILDFLAG(ENABLE_OPENXR) && BUILDFLAG(IS_WIN)
+#if BUILDFLAG(ENABLE_OPENXR) && (BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC))
   if (!preferred_device_enabled && IsOpenXrHardwareAvailable()) {
     SetOpenXrRuntimeStatus(RuntimeStatus::kEnable);
     preferred_device_enabled = true;
@@ -122,11 +126,11 @@ void IsolatedXRRuntimeProvider::SetupPollingForDeviceChanges() {
   // If none of the following runtimes are enabled, we'll get an error for
   // 'command_line' being unused, thus [[maybe_unused]].
 
-#if BUILDFLAG(ENABLE_OPENXR) && BUILDFLAG(IS_WIN)
+#if BUILDFLAG(ENABLE_OPENXR) && (BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC))
   if (IsEnabled(command_line, device::features::kOpenXR,
                 switches::kWebXrRuntimeOpenXr)) {
     openxr_platform_helper_ =
-        std::make_unique<device::OpenXrPlatformHelperWindows>();
+        std::make_unique<OpenXrDesktopPlatformHelper>();
     should_check_openxr_ = openxr_platform_helper_->EnsureInitialized() &&
                            openxr_platform_helper_->IsApiAvailable();
     any_runtimes_available |= should_check_openxr_;
@@ -148,7 +152,7 @@ void IsolatedXRRuntimeProvider::RequestDevices(
   client_->OnDevicesEnumerated();
 }
 
-#if BUILDFLAG(ENABLE_OPENXR) && BUILDFLAG(IS_WIN)
+#if BUILDFLAG(ENABLE_OPENXR) && (BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC))
 bool IsolatedXRRuntimeProvider::IsOpenXrHardwareAvailable() {
   return should_check_openxr_ && openxr_platform_helper_->IsHardwareAvailable();
 }
@@ -201,7 +205,7 @@ void IsolatedXRRuntimeProvider::CreateContextProviderAsync(
   std::move(viz_context_provider_callback).Run(context_provider);
 }
 
-#endif  // BUILDFLAG(ENABLE_OPENXR) && BUILDFLAG(IS_WIN)
+#endif  // BUILDFLAG(ENABLE_OPENXR) && (BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC))
 
 IsolatedXRRuntimeProvider::IsolatedXRRuntimeProvider(
     mojo::PendingRemote<device::mojom::XRDeviceServiceHost> device_service_host,
@@ -210,7 +214,7 @@ IsolatedXRRuntimeProvider::IsolatedXRRuntimeProvider(
       io_task_runner_(std::move(io_task_runner)) {}
 
 IsolatedXRRuntimeProvider::~IsolatedXRRuntimeProvider() {
-#if BUILDFLAG(ENABLE_OPENXR) && BUILDFLAG(IS_WIN)
+#if BUILDFLAG(ENABLE_OPENXR) && (BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC))
   // Ensure that the OpenXrPlatformHelper outlives the OpenXrDevice
   openxr_device_.reset();
   openxr_platform_helper_.reset();

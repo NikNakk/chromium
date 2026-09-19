@@ -232,6 +232,13 @@ if (enable_openxr) {
         "XR_OS_LINUX",
         "XR_USE_GRAPHICS_API_VULKAN",
       ]
+    } else if (is_mac) {
+      defines = [
+        "XRLOADER_DISABLE_EXCEPTION_HANDLING",
+        "XR_OS_APPLE",
+        "XR_USE_PLATFORM_MACOS",
+        "XR_USE_GRAPHICS_API_METAL",
+      ]
     } else {
       defines = [
         "XRLOADER_DISABLE_EXCEPTION_HANDLING",

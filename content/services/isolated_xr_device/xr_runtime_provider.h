@@ -14,14 +14,18 @@
 #include "mojo/public/cpp/bindings/pending_remote.h"
 #include "mojo/public/cpp/bindings/remote.h"
 
-#if BUILDFLAG(ENABLE_OPENXR) && BUILDFLAG(IS_WIN)
+#if BUILDFLAG(ENABLE_OPENXR) && (BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC))
 #include "components/viz/common/gpu/context_provider.h"
 #include "device/vr/openxr/context_provider_callbacks.h"
+#if BUILDFLAG(IS_WIN)
 #include "device/vr/openxr/windows/openxr_platform_helper_windows.h"
+#elif BUILDFLAG(IS_MAC)
+#include "device/vr/openxr/mac/openxr_platform_helper_mac.h"
+#endif
 #include "services/viz/public/cpp/gpu/gpu.h"
 #endif
 
-#if BUILDFLAG(ENABLE_OPENXR) && BUILDFLAG(IS_WIN)
+#if BUILDFLAG(ENABLE_OPENXR) && (BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC))
 namespace device {
 class OpenXrDevice;
 }  // namespace device
@@ -29,6 +33,12 @@ class OpenXrDevice;
 namespace viz {
 class Gpu;
 }  // namespace viz
+
+#if BUILDFLAG(IS_WIN)
+using OpenXrDesktopPlatformHelper = device::OpenXrPlatformHelperWindows;
+#elif BUILDFLAG(IS_MAC)
+using OpenXrDesktopPlatformHelper = device::OpenXrPlatformHelperMac;
+#endif
 #endif
 
 class IsolatedXRRuntimeProvider final
@@ -50,7 +60,7 @@ class IsolatedXRRuntimeProvider final
   void PollForDeviceChanges();
   void SetupPollingForDeviceChanges();
 
-#if BUILDFLAG(ENABLE_OPENXR) && BUILDFLAG(IS_WIN)
+#if BUILDFLAG(ENABLE_OPENXR) && (BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC))
   bool IsOpenXrHardwareAvailable();
   void SetOpenXrRuntimeStatus(RuntimeStatus status);
   void CreateContextProviderAsync(
@@ -59,7 +69,7 @@ class IsolatedXRRuntimeProvider final
   bool should_check_openxr_ = false;
 
   // Must outlive OpenXrDevice
-  std::unique_ptr<device::OpenXrPlatformHelperWindows> openxr_platform_helper_;
+  std::unique_ptr<OpenXrDesktopPlatformHelper> openxr_platform_helper_;
 
   std::unique_ptr<device::OpenXrDevice> openxr_device_;
 
