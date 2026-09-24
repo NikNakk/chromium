@@ -282,6 +282,11 @@ class OpenXrRenderLoop : public XRThread,
                             std::vector<LayerId> updated_layers,
                             std::unique_ptr<gfx::GpuFence> gpu_fence);
 
+#if BUILDFLAG(IS_MAC)
+  void OnWebXrSyncTokensSignaled(int16_t frame_index,
+                                 std::vector<LayerId> updated_layers);
+#endif
+
   void MaybeRejectSessionCallback();
 
   bool ShouldDelayGetFrameData() const;
