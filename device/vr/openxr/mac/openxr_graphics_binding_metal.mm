@@ -9,7 +9,6 @@
 #include <dlfcn.h>
 
 #include <algorithm>
-#include <cstdlib>
 #include <utility>
 #include <vector>
 
@@ -40,19 +39,16 @@ constexpr MTLPixelFormat kSupportedFormats[] = {
 using PublishClaimableTextureFn =
     int (*)(void* metal_texture, uint64_t* out_token);
 
+constexpr char kMonadoMetalXpcHelperPath[] =
+    "/usr/local/lib/libmonado_metal_xpc_client.dylib";
+
 PublishClaimableTextureFn GetPublishClaimableTextureFn() {
   static PublishClaimableTextureFn fn = []() -> PublishClaimableTextureFn {
-    const char* override_path =
-        std::getenv("MONADO_METAL_XPC_HELPER_LIBRARY");
-    const char* library_path =
-        (override_path && override_path[0])
-            ? override_path
-            : "/usr/local/lib/libmonado_metal_xpc_client.dylib";
-
-    void* library = dlopen(library_path, RTLD_NOW | RTLD_LOCAL);
+    void* library =
+        dlopen(kMonadoMetalXpcHelperPath, RTLD_NOW | RTLD_LOCAL);
     if (!library) {
       DLOG(ERROR) << "Unable to load Monado Metal XPC helper '"
-                  << library_path << "': " << dlerror();
+                  << kMonadoMetalXpcHelperPath << "': " << dlerror();
       return nullptr;
     }
 
@@ -181,7 +177,11 @@ XrResult OpenXrGraphicsBindingMetal::EnumerateSwapchainImages(
 }
 
 bool OpenXrGraphicsBindingMetal::CanUseSharedImages() const {
-  return impl_->device != nil && GetPublishClaimableTextureFn() != nullptr;
+  // The external EGLImage backing used by this path provides WebGL/GL
+  // representations. Chromium's Dawn/Metal SharedImage representation does not
+  // yet import EGL_METAL_TEXTURE_ANGLE, so do not advertise WebGPU support.
+  return !IsWebGPUSession() && impl_->device != nil &&
+         GetPublishClaimableTextureFn() != nullptr;
 }
 
 bool OpenXrGraphicsBindingMetal::RequiresSharedImages() const {
@@ -239,6 +239,12 @@ void OpenXrGraphicsBindingMetal::CreateSharedImages(
     OpenXrCompositionLayer& layer,
     gpu::SharedImageInterface* sii) {
   CHECK(sii);
+  if (IsWebGPUSession()) {
+    DLOG(ERROR) << __func__
+                << ": direct Metal SharedImages do not yet support WebGPU";
+    return;
+  }
+
   PublishClaimableTextureFn publish_texture = GetPublishClaimableTextureFn();
   if (!publish_texture) {
     DLOG(ERROR) << __func__ << ": Monado Metal XPC helper unavailable";
@@ -259,11 +265,6 @@ void OpenXrGraphicsBindingMetal::CreateSharedImages(
     usage |= gpu::SHARED_IMAGE_USAGE_RASTER_READ |
              gpu::SHARED_IMAGE_USAGE_RASTER_WRITE;
   }
-  if (IsWebGPUSession()) {
-    usage |= gpu::SHARED_IMAGE_USAGE_WEBGPU_READ |
-             gpu::SHARED_IMAGE_USAGE_WEBGPU_WRITE;
-  }
-
   const gpu::SharedImageInfo si_info{
       viz::SinglePlaneFormat::kBGRA_8888, size,
       gfx::ColorSpace(gfx::ColorSpace::PrimaryID::BT709,
@@ -277,6 +278,28 @@ void OpenXrGraphicsBindingMetal::CreateSharedImages(
     void* metal_texture = swap_chain_info.metal_texture.get();
     if (!metal_texture) {
       DLOG(ERROR) << __func__ << ": OpenXR swapchain texture is null";
+      return;
+    }
+
+    id<MTLTexture> texture = (__bridge id<MTLTexture>)metal_texture;
+    if (texture.device != impl_->device) {
+      DLOG(ERROR) << __func__
+                  << ": runtime swapchain texture belongs to wrong MTLDevice";
+      return;
+    }
+    if (texture.width != static_cast<NSUInteger>(size.width()) ||
+        texture.height != static_cast<NSUInteger>(size.height())) {
+      DLOG(ERROR) << __func__ << ": runtime texture size "
+                  << texture.width << "x" << texture.height
+                  << " does not match OpenXR swapchain size "
+                  << size.ToString();
+      return;
+    }
+    if (static_cast<int64_t>(texture.pixelFormat) != swapchain_format_) {
+      DLOG(ERROR) << __func__ << ": runtime texture pixel format "
+                  << static_cast<uint64_t>(texture.pixelFormat)
+                  << " does not match negotiated format "
+                  << swapchain_format_;
       return;
     }
 
