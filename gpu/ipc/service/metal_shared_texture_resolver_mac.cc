@@ -22,19 +22,16 @@
 namespace gpu {
 namespace {
 
-using TakeTexturesFn = int (*)(uint64_t token,
-                               uint32_t expected_count,
-                               void** out_metal_textures);
-using ReleaseTexturesFn = void (*)(void** metal_textures,
-                                   uint32_t image_count);
+using TakeTextureFn = int (*)(uint64_t token, void** out_metal_texture);
+using ReleaseTextureFn = void (*)(void* metal_texture);
 
 struct MonadoMetalXpcApi {
   void* library = nullptr;
-  TakeTexturesFn take_textures = nullptr;
-  ReleaseTexturesFn release_textures = nullptr;
+  TakeTextureFn take_texture = nullptr;
+  ReleaseTextureFn release_texture = nullptr;
 
   bool valid() const {
-    return library && take_textures && release_textures;
+    return library && take_texture && release_texture;
   }
 };
 
@@ -56,12 +53,12 @@ const MonadoMetalXpcApi& GetMonadoMetalXpcApi() {
       return result;
     }
 
-    result.take_textures = reinterpret_cast<TakeTexturesFn>(
-        dlsym(result.library, "ipc_metal_xpc_take_textures"));
-    result.release_textures = reinterpret_cast<ReleaseTexturesFn>(
-        dlsym(result.library, "ipc_metal_xpc_release_textures"));
+    result.take_texture = reinterpret_cast<TakeTextureFn>(
+        dlsym(result.library, "monado_metal_xpc_take_texture"));
+    result.release_texture = reinterpret_cast<ReleaseTextureFn>(
+        dlsym(result.library, "monado_metal_xpc_release_texture"));
 
-    if (!result.take_textures || !result.release_textures) {
+    if (!result.take_texture || !result.release_texture) {
       DLOG(ERROR) << "Monado Metal XPC helper is missing required exports";
     }
     return result;
@@ -80,10 +77,7 @@ gl::ScopedEGLImage ResolveMetalTextureTokenToEGLImage(uint64_t texture_token,
   }
 
   void* metal_texture = nullptr;
-  // The Chromium transport uses one claimable Monado token per OpenXR
-  // swapchain image, so resolving it always requests exactly one texture.
-  if (api.take_textures(texture_token, 1, &metal_texture) != 0 ||
-      !metal_texture) {
+  if (api.take_texture(texture_token, &metal_texture) != 0 || !metal_texture) {
     DLOG(ERROR) << __func__ << ": unable to resolve Metal texture token";
     return {};
   }
@@ -98,7 +92,7 @@ gl::ScopedEGLImage ResolveMetalTextureTokenToEGLImage(uint64_t texture_token,
       EGL_NO_CONTEXT, EGL_METAL_TEXTURE_ANGLE,
       reinterpret_cast<EGLClientBuffer>(metal_texture), attrs);
 
-  api.release_textures(&metal_texture, 1);
+  api.release_texture(metal_texture);
 
   if (!image.get()) {
     DLOG(ERROR) << __func__
