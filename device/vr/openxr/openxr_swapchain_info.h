@@ -5,6 +5,7 @@
 #ifndef DEVICE_VR_OPENXR_OPENXR_SWAPCHAIN_INFO_H_
 #define DEVICE_VR_OPENXR_OPENXR_SWAPCHAIN_INFO_H_
 
+#include "base/memory/raw_ptr.h"
 #include "gpu/command_buffer/client/client_shared_image.h"
 #include "ui/gfx/geometry/size.h"
 
@@ -62,7 +63,7 @@ struct OpenXrSwapchainInfo {
   VkImage vk_image = VK_NULL_HANDLE;
 #elif BUILDFLAG(IS_MAC)
   // Runtime-owned id<MTLTexture>, kept opaque so this header remains C++.
-  void* metal_texture = nullptr;
+  raw_ptr<void> metal_texture = nullptr;
 #elif BUILDFLAG(IS_ANDROID)
   // Ideally this would be a gluint, but there are conflicting headers for GL
   // depending on *how* you want to use it; so we can't use it at the moment.
