@@ -158,6 +158,17 @@ class GPU_COMMAND_BUFFER_CLIENT_EXPORT SharedImageInterface
       const SharedImageInfo& si_info,
       gfx::GpuMemoryBufferHandle buffer_handle) = 0;
 
+#if BUILDFLAG(IS_MAC)
+  // Creates a SharedImage whose storage is an externally-owned Metal texture.
+  // |texture_token| is opaque to Chromium's client process; it is resolved in
+  // the GPU process by the platform provider. |array_slice| selects a 2D slice
+  // when the underlying Metal texture is an array.
+  virtual scoped_refptr<ClientSharedImage>
+  CreateSharedImageFromMetalTextureToken(const SharedImageInfo& si_info,
+                                         uint64_t texture_token,
+                                         uint32_t array_slice);
+#endif
+
   // Creates a shared image for an existing MLTensor.
   // Tensors store numeric values in multiple dimensions.
   // |size| is calculated from the tensor's shape: the product of all dimensions
