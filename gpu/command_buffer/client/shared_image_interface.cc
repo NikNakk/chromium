@@ -95,6 +95,16 @@ scoped_refptr<ClientSharedImage> SharedImageInterface::CreateSharedImage(
   NOTREACHED();
 }
 
+#if BUILDFLAG(IS_MAC)
+scoped_refptr<ClientSharedImage>
+SharedImageInterface::CreateSharedImageFromMetalTextureToken(
+    const SharedImageInfo& si_info,
+    uint64_t texture_token,
+    uint32_t array_slice) {
+  NOTREACHED();
+}
+#endif
+
 scoped_refptr<ClientSharedImage> SharedImageInterface::NotifyMailboxAdded(
     const Mailbox& /*mailbox*/,
     viz::SharedImageFormat /*format*/,
