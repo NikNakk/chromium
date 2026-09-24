@@ -756,8 +756,17 @@ XrResult OpenXrApiWrapper::CreateSwapchain() {
   DCHECK(IsInitialized());
   DCHECK(HasSession());
 
-  RETURN_IF_XR_FAILED(graphics_binding_->CreateBaseLayerSwapchain(
-      session_, GetRecommendedSwapchainSampleCount()));
+  uint32_t sample_count = GetRecommendedSwapchainSampleCount();
+#if BUILDFLAG(IS_MAC)
+  // The macOS direct-Metal SharedImage path imports the OpenXR texture through
+  // EGL_ANGLE_metal_texture_client_buffer, which accepts single-sample 2D/2D
+  // array textures rather than MTLTextureType2DMultisample.
+  if (graphics_binding_->RequiresSharedImages()) {
+    sample_count = 1;
+  }
+#endif
+  RETURN_IF_XR_FAILED(
+      graphics_binding_->CreateBaseLayerSwapchain(session_, sample_count));
 
   CreateSharedMailboxes();
 
