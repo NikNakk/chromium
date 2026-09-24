@@ -13,6 +13,7 @@
 #include "base/check.h"
 #include "base/logging.h"
 #include "device/vr/openxr/openxr_composition_layer.h"
+#include "device/vr/openxr/openxr_platform.h"
 #include "device/vr/openxr/openxr_swapchain_info.h"
 #include "device/vr/openxr/openxr_util.h"
 #include "third_party/openxr/src/include/openxr/openxr.h"
@@ -28,6 +29,12 @@ constexpr MTLPixelFormat kSupportedFormats[] = {
 };
 
 }  // namespace
+
+// static
+void OpenXrGraphicsBinding::GetRequiredExtensions(
+    std::vector<const char*>& extensions) {
+  extensions.push_back(XR_KHR_METAL_ENABLE_EXTENSION_NAME);
+}
 
 class OpenXrGraphicsBindingMetal::Impl {
  public:
