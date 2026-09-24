@@ -5,6 +5,15 @@
 ; Sandbox policy for the isolated XR Device Service on macOS.
 ; The contents of common.sb are implicitly included.
 
+; When XR_RUNTIME_JSON selects a development runtime, the browser process
+; canonicalizes the manifest's parent directory and passes it as this optional
+; sandbox parameter. Allowing the selected build tree lets the OpenXR loader
+; read the manifest and dlopen its runtime without opening unrelated user files.
+(define openxr-runtime-dir "OPENXR_RUNTIME_DIR")
+(if (param-defined? openxr-runtime-dir)
+  (allow file-read* file-map-executable
+    (subpath (param openxr-runtime-dir))))
+
 ; Chromium's OpenXR process loads only the small Monado helper used to turn
 ; shared Metal textures into opaque XPC tokens.
 (allow file-read* file-map-executable
