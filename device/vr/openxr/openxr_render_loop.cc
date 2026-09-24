@@ -963,8 +963,6 @@ void OpenXrRenderLoop::SubmitFrameDrawnIntoTexture(
       graphics_binding_->EndSharedImagesExport(std::move(layer_updates),
                                                combined_sync_tokens);
 
-  gpu::gles2::GLES2Interface* gl = context_provider_->ContextGL();
-
 #if BUILDFLAG(IS_MAC)
   // The Metal OpenXR binding shares the runtime texture directly with ANGLE.
   // Wait asynchronously for the renderer's SharedImage writes to complete
@@ -974,8 +972,8 @@ void OpenXrRenderLoop::SubmitFrameDrawnIntoTexture(
       std::move(combined_sync_tokens),
       base::BindOnce(&OpenXrRenderLoop::OnWebXrSyncTokensSignaled,
                      weak_ptr_factory_.GetWeakPtr(), frame_index, layer_ids));
-  return;
-#endif
+#else
+  gpu::gles2::GLES2Interface* gl = context_provider_->ContextGL();
 
   // supports_gpu_fence_ was established once in OnContextProviderCreated().
   if (supports_gpu_fence_) {
@@ -997,6 +995,7 @@ void OpenXrRenderLoop::SubmitFrameDrawnIntoTexture(
   TRACE_EVENT_END("xr", perfetto::Track(frame_index));
   MarkFrameSubmitted(frame_index);
   MaybeCompositeAndSubmit(layer_ids);
+#endif
 }
 
 #if BUILDFLAG(IS_MAC)
