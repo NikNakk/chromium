@@ -14,7 +14,7 @@
 
 ; macOS OpenXR runs as a service/utility process. Permit only the small
 ; Monado Metal texture handoff helper and its dedicated XPC Mach service.
-(allow file-read*
+(allow file-read* file-map-executable
   (literal "/usr/local/lib/libmonado_metal_xpc_client.dylib"))
 (allow mach-lookup
   (global-name "org.freedesktop.monado.metal-ipc"))
