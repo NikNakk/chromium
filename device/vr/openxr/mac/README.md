@@ -145,6 +145,16 @@ The backing then uses Chromium's ordinary mailbox/export/WebGL machinery. Blink
 therefore renders directly into the OpenXR swapchain allocation rather than
 rendering an intermediate texture which Chromium later copies.
 
+### WebGL vertical orientation
+
+The direct WebGL texture reaches OpenXR with WebGL's usual vertical orientation.
+Chromium's existing OpenXR projection code corrects this by inverting the
+projection FOV when the composition-layer image-layout extension is not being
+used. For a direct SharedImage session, the runtime must therefore advertise
+`fovMutable = XR_TRUE`. The macOS port applies the same capability check used
+by Chromium's Windows direct-SharedImage path and fails session creation early
+when a mandatory direct path cannot be used.
+
 ## Monado helper ABI
 
 Chromium dynamically loads:
