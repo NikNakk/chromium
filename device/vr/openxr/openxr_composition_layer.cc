@@ -147,6 +147,15 @@ void OpenXrCompositionLayer::DestroySwapchain(gpu::SharedImageInterface* sii) {
     info.Clear();
   }
 
+#if BUILDFLAG(IS_MAC)
+  // OpenXR owns the MTLTexture objects returned by xrEnumerateSwapchainImages.
+  // Drop our non-owning pointers before destroying the swapchain so raw_ptr
+  // dangling-pointer instrumentation never observes their runtime destruction.
+  for (OpenXrSwapchainInfo& info : GetSwapchainImages()) {
+    info.metal_texture = nullptr;
+  }
+#endif
+
   if (color_swapchain_) {
     xrDestroySwapchain(color_swapchain_);
     color_swapchain_ = XR_NULL_HANDLE;
