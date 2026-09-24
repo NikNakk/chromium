@@ -10,7 +10,6 @@
 #include <utility>
 #include <vector>
 
-#include "base/apple/scoped_nsobject.h"
 #include "base/check.h"
 #include "base/logging.h"
 #include "components/viz/common/resources/shared_image_format.h"
@@ -303,11 +302,11 @@ bool OpenXrGraphicsBindingMetal::RenderLayer(
       MTLTextureUsageShaderRead | MTLTextureUsageRenderTarget;
   texture_desc.storageMode = MTLStorageModePrivate;
 
-  base::apple::scoped_nsprotocol<id<MTLTexture>> source_texture(
+  id<MTLTexture> __strong source_texture =
       [impl_->device newTextureWithDescriptor:texture_desc
                                     iosurface:handle.io_surface().get()
-                                        plane:0]);
-  if (!source_texture) {
+                                        plane:0];
+  if (source_texture == nil) {
     DLOG(ERROR) << __func__ << ": failed to import IOSurface as MTLTexture";
     return false;
   }
@@ -337,7 +336,7 @@ bool OpenXrGraphicsBindingMetal::RenderLayer(
   const MTLSize copy_size =
       MTLSizeMake(static_cast<NSUInteger>(size.width()),
                   static_cast<NSUInteger>(size.height()), 1);
-  [blit copyFromTexture:source_texture.get()
+  [blit copyFromTexture:source_texture
             sourceSlice:0
             sourceLevel:0
            sourceOrigin:origin
