@@ -9,6 +9,7 @@
 #include <dlfcn.h>
 
 #include "base/logging.h"
+#include "base/memory/raw_ptr.h"
 #include "ui/gl/gl_display.h"
 #include "ui/gl/scoped_egl_image.h"
 
@@ -31,7 +32,7 @@ using TakeTextureOnDeviceFn =
 using ReleaseTextureFn = void (*)(void* metal_texture);
 
 struct MonadoMetalXpcApi {
-  void* library = nullptr;
+  raw_ptr<void> library = nullptr;
   TakeTextureOnDeviceFn take_texture_on_device = nullptr;
   ReleaseTextureFn release_texture = nullptr;
 
@@ -54,10 +55,10 @@ const MonadoMetalXpcApi& GetMonadoMetalXpcApi() {
 
     result.take_texture_on_device =
         reinterpret_cast<TakeTextureOnDeviceFn>(
-            dlsym(result.library,
+            dlsym(result.library.get(),
                   "monado_metal_xpc_take_texture_on_device"));
     result.release_texture = reinterpret_cast<ReleaseTextureFn>(
-        dlsym(result.library, "monado_metal_xpc_release_texture"));
+        dlsym(result.library.get(), "monado_metal_xpc_release_texture"));
 
     if (!result.take_texture_on_device || !result.release_texture) {
       DLOG(ERROR) << "Monado Metal XPC helper is missing required exports";
