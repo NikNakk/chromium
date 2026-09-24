@@ -687,6 +687,16 @@ XrResult OpenXrApiWrapper::InitSession(
                             device::mojom::XRSessionFeature::WEBGPU);
   graphics_binding_->OnSessionCreated(local_space_, webgpu_session);
 
+  // Some graphics bindings (including the macOS direct-Metal path) have no
+  // copy-based fallback: their OpenXR swapchain images must be exposed as
+  // SharedImages. Fail the session early if that required path is unavailable
+  // rather than creating a session that can never submit a frame.
+  if (graphics_binding_->RequiresSharedImages() && !ShouldCreateSharedImages()) {
+    DLOG(ERROR) << "Graphics binding requires SharedImages but they are "
+                   "unavailable for this session";
+    return XR_ERROR_GRAPHICS_DEVICE_INVALID;
+  }
+
   // Now the primary layer should be available.
   bool swapchain_size_updated = RecomputeSwapchainSizeAndViewports();
   DCHECK(swapchain_size_updated);
@@ -873,23 +883,23 @@ bool OpenXrApiWrapper::ShouldCreateSharedImages() const {
     return false;
   }
 
-  // TODO(crbug.com/40917171): Investigate moving the remaining Windows-
-  // only checks out of this class and into the GraphicsBinding.
+  // TODO(crbug.com/40917171): Investigate moving the remaining platform-
+  // specific checks out of this class and into the GraphicsBinding.
 #if BUILDFLAG(IS_WIN)
-  if (!graphics_binding_->IsWebGPUSession()) {
+  if (!graphics_binding_->IsWebGPUSession() && CanEnableAntiAliasing()) {
     // ANGLE's render_to_texture extension on Windows fails to render correctly
-    // for EGL images. Until that is fixed, we need to disable shared images if
-    // CanEnableAntiAliasing is true. This can be ignored for WebGPU sessions,
-    // which rely on different antialiasing mechanisms.
-    if (CanEnableAntiAliasing()) {
-      return false;
-    }
+    // for EGL images. Until that is fixed, disable shared images when
+    // multisampling may be enabled. WebGPU uses a different AA path.
+    return false;
+  }
+#endif
 
-    // Since WebGL renders upside down, sharing images means the XR runtime
-    // needs to be able to consume upside down images and flip them internally.
-    // If it is unable to (fovMutable == XR_FALSE), we must gracefully fallback
-    // to copying textures. This can be ignored for WebGPU sessions, which
-    // render right-side-up.
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC)
+  if (!graphics_binding_->IsWebGPUSession()) {
+    // Direct WebGL SharedImages are submitted upside down. In the absence of
+    // the composition-layer image-layout extension, OpenXrGraphicsBinding
+    // flips them by negating the projection FOV. The runtime must therefore
+    // advertise mutable FOV for this path.
     XrViewConfigurationProperties view_configuration_props = {
         XR_TYPE_VIEW_CONFIGURATION_PROPERTIES};
     if (XR_FAILED(xrGetViewConfigurationProperties(
