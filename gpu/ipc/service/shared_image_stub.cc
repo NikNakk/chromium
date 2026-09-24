@@ -26,6 +26,9 @@
 #include "gpu/ipc/service/gpu_channel.h"
 #include "gpu/ipc/service/gpu_channel_manager.h"
 #include "gpu/ipc/service/gpu_channel_shared_image_interface.h"
+#if BUILDFLAG(IS_MAC)
+#include "gpu/ipc/service/metal_shared_texture_resolver_mac.h"
+#endif
 #include "ui/gfx/gpu_fence_handle.h"
 #include "ui/gfx/gpu_memory_buffer_handle.h"
 #include "ui/gfx/native_pixmap_handle.h"
@@ -117,6 +120,15 @@ void SharedImageStub::ExecuteDeferredRequest(
       OnCreateSharedImageWithBuffer(
           std::move(request->get_create_shared_image_with_buffer()));
       break;
+
+#if BUILDFLAG(IS_MAC)
+    case mojom::DeferredSharedImageRequest::Tag::
+        kCreateSharedImageWithMetalTextureToken:
+      OnCreateSharedImageWithMetalTextureToken(
+          std::move(
+              request->get_create_shared_image_with_metal_texture_token()));
+      break;
+#endif
 
     case mojom::DeferredSharedImageRequest::Tag::kRegisterUploadBuffer:
       OnRegisterSharedImageUploadBuffer(
@@ -335,6 +347,42 @@ void SharedImageStub::OnCreateSharedImageWithBuffer(
     return;
   }
 }
+
+#if BUILDFLAG(IS_MAC)
+void SharedImageStub::OnCreateSharedImageWithMetalTextureToken(
+    mojom::CreateSharedImageWithMetalTextureTokenParamsPtr params) {
+  TRACE_EVENT2("gpu", "SharedImageStub::OnCreateSharedImageWithMetalTextureToken",
+               "width", params->si_info->meta.size.width(), "height",
+               params->si_info->meta.size.height());
+
+  const SharedImageInfo info(params->si_info->meta,
+                             GetLabel(params->si_info->debug_label));
+  if (info.array_layers != 1 || info.format.NumberOfPlanes() != 1) {
+    LOG(ERROR) << "Metal texture token SharedImages must expose one 2D plane";
+    OnError();
+    return;
+  }
+
+  if (!MakeContextCurrent(/*needs_gl=*/true)) {
+    OnError();
+    return;
+  }
+
+  gl::ScopedEGLImage egl_image = ResolveMetalTextureTokenToEGLImage(
+      params->texture_token, params->array_slice);
+  if (!egl_image.get()) {
+    LOG(ERROR) << "Unable to resolve Metal texture token into EGLImage";
+    OnError();
+    return;
+  }
+
+  if (!factory_->CreateSharedImageFromExternalEGLImage(
+          params->mailbox, info, std::move(egl_image))) {
+    LOG(ERROR) << kSICreationFailureError;
+    OnError();
+  }
+}
+#endif
 
 bool SharedImageStub::CreateSharedImage(
     const Mailbox& mailbox,
