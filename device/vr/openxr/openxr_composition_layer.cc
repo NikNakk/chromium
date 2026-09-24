@@ -111,6 +111,11 @@ XrResult OpenXrCompositionLayer::CreateSwapchain(XrSession session,
   swapchain_create_info.faceCount = type_ == Type::kCube ? 6 : 1;
   swapchain_create_info.sampleCount = sample_count;
   swapchain_create_info.usageFlags = XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT;
+#if BUILDFLAG(IS_MAC)
+  // The macOS binding copies the renderer-visible IOSurface into the
+  // runtime-owned Metal swapchain texture with a blit command.
+  swapchain_create_info.usageFlags |= XR_SWAPCHAIN_USAGE_TRANSFER_DST_BIT;
+#endif
 
   XrSwapchain color_swapchain;
   RETURN_IF_XR_FAILED(
