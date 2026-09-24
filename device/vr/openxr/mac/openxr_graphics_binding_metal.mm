@@ -272,7 +272,7 @@ bool OpenXrGraphicsBindingMetal::RenderLayer(
     const scoped_refptr<viz::ContextProvider>& context_provider) {
   OpenXrSwapchainInfo* swap_chain_info = layer.GetActiveSwapchainImage();
   if (!swap_chain_info || !swap_chain_info->shared_image ||
-      !swap_chain_info->metal_texture) {
+      swap_chain_info->metal_texture.get() == nullptr) {
     return false;
   }
 
