@@ -429,17 +429,19 @@ if (enable_openxr) {
   # the OpenXR loader instead looks for the path to the OpenXR runtime in the
   # json file instead of the registry key. This json file copied to the output
   # folder points to our mock OpenXR runtime.
-  copy("json_mock") {
-    sources = []
-    if (is_win) {
-      sources += [ "openxr/test/openxr_win.json" ]
-    } else if (is_android) {
-      sources += [ "openxr/test/openxr_android.json" ]
-    } else if (is_linux) {
-      sources += [ "openxr/test/openxr_linux.json" ]
-    }
+  if (is_win || is_android || is_linux) {
+    copy("json_mock") {
+      sources = []
+      if (is_win) {
+        sources += [ "openxr/test/openxr_win.json" ]
+      } else if (is_android) {
+        sources += [ "openxr/test/openxr_android.json" ]
+      } else if (is_linux) {
+        sources += [ "openxr/test/openxr_linux.json" ]
+      }
 
-    outputs = [ "$root_out_dir/mock_vr_clients/bin/openxr/openxr.json" ]
+      outputs = [ "$root_out_dir/mock_vr_clients/bin/openxr/openxr.json" ]
+    }
   }
 
   if (is_linux) {
