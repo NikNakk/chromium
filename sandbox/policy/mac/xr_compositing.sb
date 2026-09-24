@@ -1,0 +1,15 @@
+; Copyright 2026 The Chromium Authors
+; Use of this source code is governed by a BSD-style license that can be
+; found in the LICENSE file.
+;
+; Sandbox policy for the isolated XR Device Service on macOS.
+; The contents of common.sb are implicitly included.
+
+; Chromium's OpenXR process loads only the small Monado helper used to turn
+; shared Metal textures into opaque XPC tokens.
+(allow file-read* file-map-executable
+  (literal "/usr/local/lib/libmonado_metal_xpc_client.dylib"))
+
+; XPC itself remains implemented by the Monado helper rather than Chromium.
+(allow mach-lookup
+  (global-name "org.freedesktop.monado.metal-ipc"))
