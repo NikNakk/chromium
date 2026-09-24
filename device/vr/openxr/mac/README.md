@@ -162,8 +162,8 @@ monado_metal_xpc_release_texture(...)
 ```
 
 The corresponding Monado branch builds and installs this helper. Chromium's
-macOS GPU and utility/XR sandbox profiles permit read access to this single
-installed dylib and Mach lookup of only:
+macOS GPU sandbox and dedicated XR-compositing sandbox permit executable mapping
+of this single installed dylib and Mach lookup of only:
 
 ```text
 org.freedesktop.monado.metal-ipc
@@ -171,7 +171,8 @@ org.freedesktop.monado.metal-ipc
 
 There is deliberately no arbitrary helper-path environment override: such a
 path would not be usable inside the sandbox without broadening its filesystem
-policy.
+policy. Other macOS utility services retain their normal sandbox and do not gain
+access to the Monado helper or Mach service.
 
 For development, install the Monado build with an install prefix that places
 the helper at the path above (the current Chromium port expects
