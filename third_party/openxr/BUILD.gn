@@ -183,6 +183,15 @@ if (enable_openxr) {
       "-Wno-extra-semi",
     ]
 
+    if (is_mac) {
+      # The OpenXR loader intentionally falls back to getenv() on Apple,
+      # which has no secure_getenv() equivalent. Upstream emits a
+      # #pragma message for that fallback, while Chromium promotes pragma
+      # messages to errors globally. Suppress only that diagnostic for the
+      # third-party loader on macOS.
+      cflags_cc += [ "-Wno-#pragma-messages" ]
+    }
+
     if (is_android) {
       sources += [
         "dev/xr_android.h",
