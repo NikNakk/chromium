@@ -64,10 +64,6 @@ struct OpenXrSwapchainInfo {
 #elif BUILDFLAG(IS_MAC)
   // Runtime-owned id<MTLTexture>, kept opaque so this header remains C++.
   raw_ptr<void> metal_texture = nullptr;
-
-  // Size of the IOSurface-backed SharedImage used as the renderer-visible
-  // intermediate texture for this OpenXR swapchain slot.
-  gfx::Size shared_buffer_size{0, 0};
 #elif BUILDFLAG(IS_ANDROID)
   // Ideally this would be a gluint, but there are conflicting headers for GL
   // depending on *how* you want to use it; so we can't use it at the moment.
