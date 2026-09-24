@@ -21,6 +21,7 @@ sb_files = [
   "on_device_translation.sb",
   "utility.sb",
   "webnn_model_compilation.sb",
+  "xr_compositing.sb",
 ]
 
 action_foreach("package_sb_files") {
