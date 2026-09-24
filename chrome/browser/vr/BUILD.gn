@@ -501,7 +501,7 @@ if (enable_vr) {
         ]
       }
 
-      if (enable_openxr) {
+      if (enable_openxr && (is_win || is_linux)) {
         deps += [
           "//device/vr:openxr_test_helper",
           "//third_party/openxr",
