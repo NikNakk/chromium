@@ -67,7 +67,7 @@ const MonadoMetalXpcApi& GetMonadoMetalXpcApi() {
     return result;
   }());
 
-  return **api;
+  return *api;
 }
 
 }  // namespace
