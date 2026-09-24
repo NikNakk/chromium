@@ -190,7 +190,10 @@ the helper at the path above (the current Chromium port expects
 
 ## Token ownership
 
-Normal Monado Metal-XPC tokens remain PID scoped.
+Normal Monado Metal-XPC tokens remain PID scoped. Those ordinary tokens retain
+their legacy 32-bit-compatible layout. Chromium's claimable handoff uses a
+separate 64-bit token namespace with 56 random bits, since it travels through
+Mojo rather than the legacy Monado image-metadata field.
 
 Chromium needs one special handoff because the OpenXR runtime is used from the
 isolated XR process while the SharedImage is constructed in Chromium's GPU
