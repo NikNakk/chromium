@@ -44,7 +44,7 @@ const MonadoMetalXpcApi& GetMonadoMetalXpcApi() {
     const char* library_path =
         (override_path && override_path[0])
             ? override_path
-            : "libmonado_metal_xpc_client.dylib";
+            : "/usr/local/lib/libmonado_metal_xpc_client.dylib";
 
     result.library = dlopen(library_path, RTLD_NOW | RTLD_LOCAL);
     if (!result.library) {
