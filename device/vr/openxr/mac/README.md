@@ -188,6 +188,14 @@ For development, install the Monado build with an install prefix that places
 the helper at the path above (the current Chromium port expects
 `/usr/local/lib`).
 
+When `XR_RUNTIME_JSON` is set, Chromium's browser process also passes the
+canonical parent directory of that manifest into the dedicated XR sandbox as
+an optional read/execute allowance. This is specifically for development builds:
+the OpenXR loader can read the selected manifest and load a runtime/library from
+the same Monado build tree without opening the rest of the user's home
+directory. Installed runtime discovery does not need this development
+allowance.
+
 ## Token ownership
 
 Normal Monado Metal-XPC tokens remain PID scoped. Those ordinary tokens retain
