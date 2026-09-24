@@ -224,6 +224,26 @@ EGLImageBacking::EGLImageBacking(
   }
 }
 
+EGLImageBacking::EGLImageBacking(
+    const Mailbox& mailbox,
+    const SharedImageInfo& si_info,
+    size_t estimated_size,
+    const std::vector<GLCommonImageBackingFactory::FormatInfo>& format_info,
+    bool use_passthrough,
+    gl::ScopedEGLImage external_egl_image)
+    : ClearTrackingSharedImageBacking(mailbox,
+                                      si_info,
+                                      estimated_size,
+                                      true /*is_thread_safe*/),
+      format_info_(format_info),
+      use_passthrough_(use_passthrough) {
+  CHECK(external_egl_image.get());
+  CHECK_EQ(si_info.format.NumberOfPlanes(), 1);
+  CHECK_EQ(si_info.array_layers, 1u);
+  created_on_context_ = gl::g_current_gl_context;
+  egl_images_.push_back(std::move(external_egl_image));
+}
+
 EGLImageBacking::~EGLImageBacking() {
   CHECK(source_texture_holders_.empty());
 }
