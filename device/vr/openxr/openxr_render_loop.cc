@@ -965,6 +965,18 @@ void OpenXrRenderLoop::SubmitFrameDrawnIntoTexture(
 
   gpu::gles2::GLES2Interface* gl = context_provider_->ContextGL();
 
+#if BUILDFLAG(IS_MAC)
+  // The Metal OpenXR binding shares the runtime texture directly with ANGLE.
+  // Wait asynchronously for the renderer's SharedImage writes to complete
+  // before releasing/submitting the OpenXR image. Monado's existing
+  // compositor/reuse synchronization takes over after xrReleaseSwapchainImage.
+  context_provider_->SharedImageInterface()->SignalSyncToken(
+      std::move(combined_sync_tokens),
+      base::BindOnce(&OpenXrRenderLoop::OnWebXrSyncTokensSignaled,
+                     weak_ptr_factory_.GetWeakPtr(), frame_index, layer_ids));
+  return;
+#endif
+
   // supports_gpu_fence_ was established once in OnContextProviderCreated().
   if (supports_gpu_fence_) {
     gpu::ClientSharedImage::CreateGpuFenceForSyncTokens(
@@ -986,6 +998,20 @@ void OpenXrRenderLoop::SubmitFrameDrawnIntoTexture(
   MarkFrameSubmitted(frame_index);
   MaybeCompositeAndSubmit(layer_ids);
 }
+
+#if BUILDFLAG(IS_MAC)
+void OpenXrRenderLoop::OnWebXrSyncTokensSignaled(
+    int16_t frame_index,
+    std::vector<LayerId> updated_layers) {
+  TRACE_EVENT_END("xr", perfetto::Track(frame_index));
+  if (!is_presenting_ || !openxr_ || !context_provider_) {
+    return;
+  }
+
+  MarkFrameSubmitted(frame_index);
+  MaybeCompositeAndSubmit(updated_layers);
+}
+#endif
 
 void OpenXrRenderLoop::OnWebXrTokenSignaled(
     int16_t frame_index,
