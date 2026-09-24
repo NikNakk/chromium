@@ -13,7 +13,7 @@
 
 ; Monado helper used to resolve opaque Metal texture tokens. Keep this to one
 ; installed dylib rather than granting the GPU process general library access.
-(allow file-read*
+(allow file-read* file-map-executable
   (literal "/usr/local/lib/libmonado_metal_xpc_client.dylib"))
 
 ; Allow communication between the GPU process and the UI server.
