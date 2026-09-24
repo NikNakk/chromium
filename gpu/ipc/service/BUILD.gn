@@ -131,6 +131,7 @@ component("service") {
       frameworks = [
         "CoreGraphics.framework",
         "IOSurface.framework",
+        "Metal.framework",
         "OpenGL.framework",
         "QuartzCore.framework",
       ]
