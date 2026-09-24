@@ -86,6 +86,10 @@ class GPU_IPC_SERVICE_EXPORT SharedImageStub {
       mojom::CreateSharedImageWithDataParamsPtr params);
   void OnCreateSharedImageWithBuffer(
       mojom::CreateSharedImageWithBufferParamsPtr params);
+#if BUILDFLAG(IS_MAC)
+  void OnCreateSharedImageWithMetalTextureToken(
+      mojom::CreateSharedImageWithMetalTextureTokenParamsPtr params);
+#endif
   bool CreateSharedImage(
       const Mailbox& mailbox,
       const SharedImageInfo& info,
