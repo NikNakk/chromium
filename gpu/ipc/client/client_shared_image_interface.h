@@ -68,6 +68,13 @@ class GPU_IPC_CLIENT_EXPORT ClientSharedImageInterface
       const SharedImageInfo& si_info,
       gfx::GpuMemoryBufferHandle buffer_handle) override;
 
+#if BUILDFLAG(IS_MAC)
+  scoped_refptr<ClientSharedImage> CreateSharedImageFromMetalTextureToken(
+      const SharedImageInfo& si_info,
+      uint64_t texture_token,
+      uint32_t array_slice) override;
+#endif
+
   scoped_refptr<ClientSharedImage> CreateSharedImageForMLTensor(
       std::string debug_label,
       viz::SharedImageFormat format,
