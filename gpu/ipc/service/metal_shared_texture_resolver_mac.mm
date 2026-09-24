@@ -10,6 +10,7 @@
 
 #include "base/logging.h"
 #include "base/memory/raw_ptr.h"
+#include "base/no_destructor.h"
 #include "ui/gl/gl_display.h"
 #include "ui/gl/scoped_egl_image.h"
 
@@ -42,7 +43,7 @@ struct MonadoMetalXpcApi {
 };
 
 const MonadoMetalXpcApi& GetMonadoMetalXpcApi() {
-  static const MonadoMetalXpcApi api = [] {
+  static const base::NoDestructor<MonadoMetalXpcApi> api([] {
     MonadoMetalXpcApi result;
 
     result.library =
@@ -64,9 +65,9 @@ const MonadoMetalXpcApi& GetMonadoMetalXpcApi() {
       DLOG(ERROR) << "Monado Metal XPC helper is missing required exports";
     }
     return result;
-  }();
+  }());
 
-  return api;
+  return **api;
 }
 
 }  // namespace
