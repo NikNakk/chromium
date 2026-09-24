@@ -48,6 +48,17 @@ class EGLImageBacking : public ClearTrackingSharedImageBacking {
       bool use_passthrough,
       base::span<const uint8_t> pixel_data);
 
+  // Creates a backing around an EGLImage whose storage is owned externally.
+  // This is used by macOS OpenXR to wrap an EGL_METAL_TEXTURE_ANGLE image
+  // created from a Monado shared MTLTexture rather than allocating new storage.
+  EGLImageBacking(
+      const Mailbox& mailbox,
+      const SharedImageInfo& si_info,
+      size_t estimated_size,
+      const std::vector<GLCommonImageBackingFactory::FormatInfo>& format_info,
+      bool use_passthrough,
+      gl::ScopedEGLImage external_egl_image);
+
   EGLImageBacking(const EGLImageBacking&) = delete;
   EGLImageBacking& operator=(const EGLImageBacking&) = delete;
 
