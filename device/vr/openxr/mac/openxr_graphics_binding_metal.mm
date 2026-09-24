@@ -287,6 +287,13 @@ void OpenXrGraphicsBindingMetal::CreateSharedImages(
                   << ": runtime swapchain texture belongs to wrong MTLDevice";
       return;
     }
+    if (texture.textureType != MTLTextureType2D || texture.sampleCount != 1) {
+      DLOG(ERROR) << __func__ << ": runtime swapchain texture must be a "
+                     "single-sample MTLTextureType2D, got type="
+                  << static_cast<uint64_t>(texture.textureType)
+                  << " samples=" << texture.sampleCount;
+      return;
+    }
     if (texture.width != static_cast<NSUInteger>(size.width()) ||
         texture.height != static_cast<NSUInteger>(size.height())) {
       DLOG(ERROR) << __func__ << ": runtime texture size "
