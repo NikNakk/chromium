@@ -42,7 +42,7 @@ OpenXrSwapchainInfo& OpenXrSwapchainInfo::operator=(OpenXrSwapchainInfo&&) =
 void OpenXrSwapchainInfo::Clear() {
   shared_image.reset();
   sync_token.Clear();
-#if BUILDFLAG(IS_ANDROID)
+#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_MAC)
   // Resetting the SharedBufferSize ensures that we will re-create the Shared
   // Buffer if it is needed.
   shared_buffer_size = {0, 0};
