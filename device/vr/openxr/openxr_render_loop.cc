@@ -1321,17 +1321,10 @@ void OpenXrRenderLoop::OnContextProviderCreated(
   // crashes the GPU process, so SubmitFrameDrawnIntoTexture() uses glFinish.
   const char* extensions = reinterpret_cast<const char*>(
       context_provider_->ContextGL()->GetString(GL_EXTENSIONS));
-#if BUILDFLAG(IS_MAC)
-  // gfx::GpuFence::Wait() has no macOS implementation. The Metal OpenXR
-  // binding therefore uses the explicit GL-finish path before importing the
-  // IOSurface into Metal.
-  supports_gpu_fence_ = false;
-#else
   supports_gpu_fence_ =
       extensions &&
       std::string_view(extensions).find("GL_CHROMIUM_gpu_fence") !=
           std::string_view::npos;
-#endif
   DVLOG(1) << __func__
            << " GL_CHROMIUM_gpu_fence supported=" << supports_gpu_fence_;
 
