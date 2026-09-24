@@ -11,6 +11,11 @@
 
 (allow ipc-posix-shm)
 
+; Monado helper used to resolve opaque Metal texture tokens. Keep this to one
+; installed dylib rather than granting the GPU process general library access.
+(allow file-read*
+  (literal "/usr/local/lib/libmonado_metal_xpc_client.dylib"))
+
 ; Allow communication between the GPU process and the UI server.
 (allow mach-lookup
   ; Needed for AudioToolbox AAC encoding (https://crbug.com/1321287) and
