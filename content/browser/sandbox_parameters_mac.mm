@@ -13,6 +13,7 @@
 #include "base/check.h"
 #include "base/command_line.h"
 #include "base/feature_list.h"
+#include "base/environment.h"
 #include "base/files/file_util.h"
 #include "base/mac/mac_util.h"
 #include "base/no_destructor.h"
@@ -223,8 +224,25 @@ bool SetupSandboxParameters(sandbox::mojom::Sandbox sandbox_type,
     case sandbox::mojom::Sandbox::kAudio:
     case sandbox::mojom::Sandbox::kCdm:
     case sandbox::mojom::Sandbox::kMirroring:
-    case sandbox::mojom::Sandbox::kXrCompositing:
     case sandbox::mojom::Sandbox::kPrintBackend:
+    case sandbox::mojom::Sandbox::kXrCompositing: {
+      // XR_RUNTIME_JSON is consumed by the OpenXR loader inside the isolated
+      // XR service, after Seatbelt has been entered. Pass only the selected
+      // manifest's parent directory into the XR-specific profile so a
+      // development Monado build remains loadable without granting general
+      // access to the user's home directory.
+      std::unique_ptr<base::Environment> env = base::Environment::Create();
+      std::optional<std::string> runtime_json = env->GetVar("XR_RUNTIME_JSON");
+      if (runtime_json && !runtime_json->empty()) {
+        base::FilePath runtime_dir =
+            sandbox::policy::GetCanonicalPath(
+                base::FilePath(*runtime_json).DirName());
+        CHECK(serializer->SetParameter(
+            sandbox::policy::kParamOpenxrRuntimeDir,
+            runtime_dir.value()));
+      }
+      break;
+    }
     case sandbox::mojom::Sandbox::kPrintCompositor:
     case sandbox::mojom::Sandbox::kRenderer:
     case sandbox::mojom::Sandbox::kService:
