@@ -31,6 +31,7 @@ class DEVICE_VR_EXPORT OpenXrGraphicsBindingMetal
   int64_t GetSwapchainFormat(XrSession session) const override;
   XrResult EnumerateSwapchainImages(OpenXrCompositionLayer& layer) override;
   bool CanUseSharedImages() const override;
+  bool RequiresSharedImages() const override;
   void CleanupWithoutSubmit() override;
   gfx::Size GetMaxTextureSize() override;
   bool SetOverlayTexture(gfx::GpuMemoryBufferHandle texture,
