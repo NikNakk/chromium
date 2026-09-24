@@ -63,6 +63,7 @@ UtilitySandboxedProcessLauncherDelegate::
 #endif
 #if BUILDFLAG(IS_MAC)
       sandbox_type_ == sandbox::mojom::Sandbox::kMirroring ||
+      sandbox_type_ == sandbox::mojom::Sandbox::kXrCompositing ||
 #endif
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC)
       sandbox_type_ == sandbox::mojom::Sandbox::kProxyResolver ||
