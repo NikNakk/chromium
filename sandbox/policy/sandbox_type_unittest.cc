@@ -78,12 +78,14 @@ TEST(SandboxTypeTest, Utility) {
   EXPECT_EQ(Sandbox::kSpeechRecognition,
             SandboxTypeFromCommandLine(command_line9));
 
-#if BUILDFLAG(IS_WIN)
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC)
   base::CommandLine command_line10(command_line);
   SetCommandLineFlagsForSandboxType(&command_line10, Sandbox::kXrCompositing);
   EXPECT_EQ(Sandbox::kXrCompositing,
             SandboxTypeFromCommandLine(command_line10));
+#endif
 
+#if BUILDFLAG(IS_WIN)
   base::CommandLine command_line11(command_line);
   SetCommandLineFlagsForSandboxType(&command_line11,
                                     Sandbox::kNoSandboxAndElevatedPrivileges);
