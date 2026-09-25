@@ -79,6 +79,7 @@ void OpenXrGraphicsBinding::OnSessionCreated(XrSpace local_space,
 }
 
 void OpenXrGraphicsBinding::OnSessionDestroyed(gpu::SharedImageInterface* sii) {
+  last_rendered_base_projection_views_.clear();
   if (base_layer_) {
     base_layer_->DestroySwapchain(sii);
     base_layer_.reset();
@@ -93,7 +94,31 @@ std::vector<XrCompositionLayerProjectionView>
 OpenXrGraphicsBinding::GetBaseLayerProjectionViews(
     const OpenXrViewConfiguration& view_config) const {
   CHECK(base_layer_);
-  return GetProjectionViews(view_config, *base_layer_);
+
+  std::vector<XrCompositionLayerProjectionView> projection_views =
+      GetProjectionViews(view_config, *base_layer_);
+
+  // Keep the projection metadata paired with the pixels that are actually
+  // submitted to the runtime. When WebXR intentionally skips a render, the
+  // base layer keeps presenting the previously released swapchain image; using
+  // the new frame's view pose for those old pixels would make runtime
+  // reprojection believe the stale image was rendered from the current head
+  // pose.
+  if (base_layer_->is_rendered()) {
+    last_rendered_base_projection_views_[view_config.Type()] =
+        projection_views;
+    return projection_views;
+  }
+
+  auto cached =
+      last_rendered_base_projection_views_.find(view_config.Type());
+  if (cached != last_rendered_base_projection_views_.end()) {
+    return cached->second;
+  }
+
+  // Before the first rendered base-layer frame there is nothing valid to reuse.
+  // Preserve the existing behaviour until a rendered image establishes a cache.
+  return projection_views;
 }
 
 std::vector<XrCompositionLayerProjectionView>
@@ -239,6 +264,7 @@ XrResult OpenXrGraphicsBinding::CreateBaseLayerSwapchain(
 void OpenXrGraphicsBinding::DestroyBaseLayerSwapchain(
     gpu::SharedImageInterface* sii) {
   CHECK(base_layer_);
+  last_rendered_base_projection_views_.clear();
   base_layer_->DestroySwapchain(sii);
 }
 
