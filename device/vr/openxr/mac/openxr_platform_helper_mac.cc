@@ -82,16 +82,31 @@ bool OpenXrPlatformHelperMac::EnsurePollingInstance() {
 }
 
 bool OpenXrPlatformHelperMac::IsApiAvailable() {
-  return EnsurePollingInstance();
+  const bool available = EnsurePollingInstance();
+  if (!available) {
+    LOG(ERROR) << "macOS OpenXR: failed to create polling XrInstance";
+  } else {
+    VLOG(1) << "macOS OpenXR: polling XrInstance created successfully";
+  }
+  return available;
 }
 
 bool OpenXrPlatformHelperMac::IsHardwareAvailable() {
   if (!EnsurePollingInstance()) {
+    LOG(ERROR) << "macOS OpenXR: no polling XrInstance while checking hardware";
     return false;
   }
 
-  XrSystemId system;
-  return XR_SUCCEEDED(OpenXrApiWrapper::GetSystem(xr_instance_, &system));
+  XrSystemId system = XR_NULL_SYSTEM_ID;
+  const XrResult result = OpenXrApiWrapper::GetSystem(xr_instance_, &system);
+  if (XR_FAILED(result)) {
+    LOG(ERROR) << "macOS OpenXR: xrGetSystem failed: " << result;
+    return false;
+  }
+
+  VLOG(1) << "macOS OpenXR: xrGetSystem succeeded, system="
+          << static_cast<uint64_t>(system);
+  return true;
 }
 
 }  // namespace device
