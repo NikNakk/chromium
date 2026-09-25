@@ -14,6 +14,16 @@
   (allow file-read* file-map-executable
     (subpath (param openxr-runtime-dir))))
 
+; Monado's native OpenXR client still uses its ordinary Unix-domain IPC
+; channel to monado-service. On macOS, without XDG overrides, the socket lives
+; below ~/Library/Caches/monado. Permit only that runtime directory and socket.
+(define monado-runtime-dir
+  (user-homedir-path "/Library/Caches/monado"))
+(allow file-read* file-write-create
+  (subpath monado-runtime-dir))
+(allow network-outbound
+  (literal (string-append monado-runtime-dir "/monado_comp_ipc")))
+
 ; Chromium's OpenXR process loads only the small Monado helper used to turn
 ; shared Metal textures into opaque XPC tokens.
 (allow file-read* file-map-executable
