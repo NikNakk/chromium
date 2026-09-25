@@ -218,11 +218,23 @@ void IsolatedXRRuntimeProvider::CreateContextProviderAsync(
         viz_gpu_->EstablishGpuChannelSync();
   }
 
-  scoped_refptr<viz::ContextProvider> context_provider =
-      viz::ContextProviderCommandBuffer::CreateForGL(
-          viz_gpu_->GetGpuChannel(), content::kGpuStreamIdDefault,
-          content::kGpuStreamPriorityUI, GURL("chrome://gpu/XrRuntime"),
-          viz::command_buffer_metrics::ContextType::XR_COMPOSITING);
+  scoped_refptr<viz::ContextProvider> context_provider;
+#if BUILDFLAG(IS_MAC)
+  // macOS XR only needs SharedImageInterface from this provider. A generic
+  // GLES2 context is rejected for non-GPU-host channels on macOS/Linux, and
+  // the Metal submission path does not use ContextGL().
+  context_provider = viz::ContextProviderCommandBuffer::CreateForRaster(
+      viz_gpu_->GetGpuChannel(), content::kGpuStreamIdDefault,
+      content::kGpuStreamPriorityUI, GURL("chrome://gpu/XrRuntime"),
+      /*automatic_flushes=*/false, /*support_locking=*/false,
+      gpu::SharedMemoryLimits::ForMailboxContext(),
+      viz::command_buffer_metrics::ContextType::XR_COMPOSITING);
+#else
+  context_provider = viz::ContextProviderCommandBuffer::CreateForGL(
+      viz_gpu_->GetGpuChannel(), content::kGpuStreamIdDefault,
+      content::kGpuStreamPriorityUI, GURL("chrome://gpu/XrRuntime"),
+      viz::command_buffer_metrics::ContextType::XR_COMPOSITING);
+#endif
 
   std::move(viz_context_provider_callback).Run(context_provider);
 }
