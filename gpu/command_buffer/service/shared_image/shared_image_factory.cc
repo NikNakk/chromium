@@ -767,10 +767,10 @@ bool SharedImageFactory::CreateSharedImageFromExternalEGLImage(
     egl_factory = static_cast<EGLImageBackingFactory*>(base_factory);
   } else {
     CHECK(context_state_);
-    auto feature_info = context_state_->feature_info();
+    auto* feature_info = context_state_->feature_info();
     CHECK(feature_info);
     external_egl_factory = std::make_unique<EGLImageBackingFactory>(
-        gpu_preferences_, workarounds_, feature_info.get());
+        gpu_preferences_, workarounds_, feature_info);
     egl_factory = external_egl_factory.get();
     DVLOG(1) << __func__
              << ": using external-only EGLImage backing factory on macOS";
