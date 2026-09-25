@@ -33,10 +33,12 @@ constexpr XrView kDefaultView{
     /*pose=*/{{0, 0, 0, 1}, {0, 0, 0}},
     /*fov=*/{kDefaultFov, kDefaultFov, kDefaultFov, kDefaultFov}};
 
-// TODO(crbug.com/529457611): Windows and Linux do not support framebuffer
-// scaling.
+// TODO(crbug.com/529457611): Desktop OpenXR backends that expose runtime
+// swapchain images directly to WebXR must keep the OpenXR swapchain size in
+// lockstep with Blink's drawing buffer. Windows, Linux, and macOS therefore do
+// not support framebuffer scaling yet.
 constexpr bool kSupportsViewportScaling =
-    !BUILDFLAG(IS_WIN) && !BUILDFLAG(IS_LINUX);
+    !BUILDFLAG(IS_WIN) && !BUILDFLAG(IS_LINUX) && !BUILDFLAG(IS_MAC);
 
 constexpr base::ByteSize kLowMemoryThreshold = base::GiB(8);
 constexpr double kLowMemoryDefaultMaxScaleFactor = 1.5f;
