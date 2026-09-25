@@ -303,6 +303,16 @@ class OpenXrGraphicsBinding {
       OpenXrCompositionLayer& layer) const;
 
   std::unique_ptr<OpenXrCompositionLayer> base_layer_;
+
+  // Projection metadata must stay paired with the swapchain image that was
+  // actually rendered. Sparse WebXR frames may keep presenting the previously
+  // released image while the current acquired image remains untouched, so cache
+  // the projection views from the last rendered base-layer frame for each view
+  // configuration and reuse them until new base-layer pixels are produced.
+  mutable std::map<
+      XrViewConfigurationType,
+      std::vector<XrCompositionLayerProjectionView>>
+      last_rendered_base_projection_views_;
   // Each client created layer has a unique ID.
   std::map<LayerId, std::unique_ptr<OpenXrCompositionLayer>> layers_;
   // This sequence defines which layers should be composed.
