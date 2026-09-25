@@ -49,8 +49,9 @@ BASE_FEATURE(kOpenXrAndroidSystemKeyboard, base::FEATURE_ENABLED_BY_DEFAULT);
 #if BUILDFLAG(ENABLE_OPENXR)
 // Controls WebXR support for the OpenXR Runtime.
 BASE_FEATURE(kOpenXR,
-             BUILDFLAG(IS_WIN) ? base::FEATURE_ENABLED_BY_DEFAULT
-                               : base::FEATURE_DISABLED_BY_DEFAULT);
+             (BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC))
+                 ? base::FEATURE_ENABLED_BY_DEFAULT
+                 : base::FEATURE_DISABLED_BY_DEFAULT);
 
 // Controls whether the spatial entities framework is allowed to use depth-based
 // hit tests or only plane-based ones.
