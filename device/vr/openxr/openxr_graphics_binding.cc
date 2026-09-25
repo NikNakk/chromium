@@ -387,7 +387,16 @@ XrResult OpenXrGraphicsBinding::ReleaseActiveSwapchainImages() {
     if (!layer->is_rendered()) {
       continue;
     }
-    layer->ReleaseActiveSwapchainImage();
+    RETURN_IF_XR_FAILED(layer->ReleaseActiveSwapchainImage());
+  }
+
+  // The base layer follows the same rule as explicit layers. If Blink did not
+  // submit content for this display frame (for example the WebXR sparse-frames
+  // test), keep the currently acquired image held for the next render rather
+  // than releasing an untouched image. xrEndFrame can continue presenting the
+  // swapchain's previously released image in the meantime.
+  if (!base_layer_->is_rendered()) {
+    return XR_SUCCESS;
   }
   return base_layer_->ReleaseActiveSwapchainImage();
 }
