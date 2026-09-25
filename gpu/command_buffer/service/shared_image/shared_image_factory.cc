@@ -755,12 +755,27 @@ bool SharedImageFactory::CreateSharedImageFromExternalEGLImage(
     const SharedImageInfo& si_info,
     gl::ScopedEGLImage external_egl_image) {
   auto* base_factory = GetFactoryByType(SharedImageBackingType::kEGLImage);
-  if (!base_factory) {
-    DLOG(ERROR) << __func__ << ": EGLImage backing factory unavailable";
-    return false;
+
+  // The generic EGLImage factory is only registered when Chromium advertises
+  // the full set of EGL/GL capabilities needed to create EGLImages from GL
+  // textures. The macOS OpenXR path is different: ANGLE has already imported
+  // an external MTLTexture as an EGLImage, so it only needs EGLImageBacking to
+  // wrap that existing image and expose GL representations to WebXR.
+  std::unique_ptr<EGLImageBackingFactory> external_egl_factory;
+  EGLImageBackingFactory* egl_factory = nullptr;
+  if (base_factory) {
+    egl_factory = static_cast<EGLImageBackingFactory*>(base_factory);
+  } else {
+    CHECK(context_state_);
+    auto feature_info = context_state_->feature_info();
+    CHECK(feature_info);
+    external_egl_factory = std::make_unique<EGLImageBackingFactory>(
+        gpu_preferences_, workarounds_, feature_info.get());
+    egl_factory = external_egl_factory.get();
+    DVLOG(1) << __func__
+             << ": using external-only EGLImage backing factory on macOS";
   }
 
-  auto* egl_factory = static_cast<EGLImageBackingFactory*>(base_factory);
   std::unique_ptr<SharedImageBacking> backing =
       egl_factory->CreateSharedImageFromExternalEGLImage(
           mailbox, si_info, std::move(external_egl_image));
