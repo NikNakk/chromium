@@ -1341,6 +1341,7 @@ void OpenXrRenderLoop::OnContextProviderCreated(
   context_provider->AddObserver(this);
   context_provider_ = std::move(context_provider);
 
+#if !BUILDFLAG(IS_MAC)
   // GL_CHROMIUM_gpu_fence (EGL_ANDROID_native_fence_sync) is a fixed property
   // of this context, so query it once here. Requesting a fence without it
   // crashes the GPU process, so SubmitFrameDrawnIntoTexture() uses glFinish.
@@ -1352,6 +1353,7 @@ void OpenXrRenderLoop::OnContextProviderCreated(
           std::string_view::npos;
   DVLOG(1) << __func__
            << " GL_CHROMIUM_gpu_fence supported=" << supports_gpu_fence_;
+#endif
 
   std::move(start_runtime_callback).Run(true);
 
