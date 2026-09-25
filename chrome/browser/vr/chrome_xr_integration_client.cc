@@ -189,7 +189,15 @@ std::unique_ptr<content::VrUiHost> ChromeXrIntegrationClient::CreateVrUiHost(
     content::WebContents& contents,
     const std::vector<device::mojom::XRViewPtr>& views,
     mojo::PendingRemote<device::mojom::ImmersiveOverlay> overlay) {
+#if BUILDFLAG(IS_MAC)
+  // Chromium's immersive browser overlay has no macOS GraphicsDelegate yet.
+  // Returning no UI host is supported by BrowserXRRuntimeImpl and keeps WebXR
+  // visible using the OpenXR render loop's default overlay=false/webxr=true
+  // state, rather than dereferencing the null GraphicsDelegate.
+  return nullptr;
+#else
   return std::make_unique<VRUiHostImpl>(contents, views, std::move(overlay));
+#endif
 }
 }  // namespace vr
 
