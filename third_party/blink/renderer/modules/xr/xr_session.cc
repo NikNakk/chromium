@@ -2264,7 +2264,15 @@ void XRSession::OnFrame(double timestamp,
     auto* transport_delegate = render_state_->GetTransportDelegate();
     CHECK(transport_delegate);
 
-    if (shared_images.empty() && layers_enabled_) {
+    // The optional "layers" session feature permits more than one composition
+    // layer, but the WebXR Layers API also permits a single explicit layer
+    // without that feature. Do not use layers_enabled_ as a proxy for whether
+    // renderState.layers is active.
+    const bool using_composition_layers =
+        RuntimeEnabledFeatures::WebXRLayersCommonEnabled() &&
+        !render_state_->layers().empty();
+
+    if (shared_images.empty() && using_composition_layers) {
       DVLOG(2) << __func__ << ": there is no shared images.";
       xr_->frameProvider()->SubmitFrame(transport_delegate);
       return;
@@ -2272,34 +2280,40 @@ void XRSession::OnFrame(double timestamp,
 
     if (should_update_layers_backend_) {
       should_update_layers_backend_ = false;
-      if (layers_enabled_) {
-        // This means that the page has updated the layers since it last
-        // received a new frame, but we haven't updated the backend yet, so the
-        // page won't be able to use those layers just yet as they expect. For
-        // now, drop this frame and request a new one with the updated layers,
-        // which we'll then serve to the page.
-        // TODO(crbug.com/452604976): Refactor the frame submission flow to
-        // allow the layer sequence to be updated by the backend compositor
-        // without dropping the current frame.
+      if (using_composition_layers) {
+        // This means that the page has updated the explicit composition-layer
+        // sequence since it last received a frame. This applies even when the
+        // optional multi-layer feature was not requested: one explicit layer is
+        // still valid and needs a real XRLayerManager backend.
         render_state_->UpdateLayersBackend(LayerManager());
         render_state_->OnLayersUpdated();
 
         // Submit this animation frame without changes and request a new one
-        // immediately.
+        // immediately so the next frame contains the newly enabled layer's
+        // SharedImage.
         xr_->frameProvider()->SubmitFrame(transport_delegate);
         MaybeRequestFrame();
         return;
       }
+
+      // If a feature-less single composition layer was just removed, disable
+      // it on the backend before returning to the legacy base-layer path.
+      if (!layers_enabled_ && LayerManager()) {
+        LayerManager()->SetEnabledCompositionLayers({});
+        render_state_->OnLayersUpdated();
+      }
     }
 
-    // If the 'layers' feature is disabled, the shared image lacks an associated
-    // layer ID. The shared image must then be bound to the first layer.
+    // Explicit composition-layer SharedImages already carry their layer IDs.
+    // Only the legacy base-layer path lacks one and needs to be rebound to the
+    // first XR layer object.
     layer_shared_image_manager_.SetSharedImages(
-        layers_enabled_ ? nullptr : render_state_->GetFirstLayer(),
+        using_composition_layers ? nullptr : render_state_->GetFirstLayer(),
         std::move(shared_images));
 
-    // Dispatch the "redraw" event for layers that should be updated.
-    if (layers_enabled_) {
+    // Redraw state belongs to the Layers API, not specifically to the optional
+    // feature that enables multiple simultaneous layers.
+    if (using_composition_layers) {
       render_state_->MaybeDispatchRedrawEvents();
     }
 
