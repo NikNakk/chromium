@@ -646,7 +646,12 @@ void OpenXrGraphicsBindingMetal::CreateSharedImages(
 
 bool OpenXrGraphicsBindingMetal::ShouldFlipSubmittedImage(
     OpenXrCompositionLayer& layer) const {
-  return true;
+  // Metal's image origin is inverted relative to the orientation expected by
+  // Chromium's existing OpenXR composition path, so ordinary WebXR layers
+  // need a runtime Y flip. Some layer producers (notably XR media layers)
+  // already mark their content as Y-flipped; in that case the two inversions
+  // cancel and no additional runtime flip should be requested.
+  return !layer.flip_y();
 }
 
 std::unique_ptr<OpenXrCompositionLayer::GraphicsBindingData>
