@@ -451,21 +451,11 @@ void OpenXrRenderLoop::MaybeCompositeAndSubmit(
     const std::vector<LayerId>& updated_layers) {
   DVLOG(3) << __func__;
   if (!pending_frame_) {
-    LOG(INFO) << "XRFRAME composite no-pending layers="
-              << updated_layers.size();
     // There is no outstanding frame, nor frame to composite, but there may be
     // pending GetFrameData calls, so ClearPendingFrame() to respond to them.
     ClearPendingFrame();
     return;
   }
-
-  LOG(INFO) << "XRFRAME composite frame="
-            << pending_frame_->render_info_->frame_id
-            << " waiting_webxr=" << pending_frame_->waiting_for_webxr_
-            << " waiting_overlay=" << pending_frame_->waiting_for_overlay_
-            << " webxr_submitted=" << pending_frame_->webxr_submitted_
-            << " overlay_submitted=" << pending_frame_->overlay_submitted_
-            << " updated_layers=" << updated_layers.size();
 
   // Check if we have obtained all layers (overlay and webxr) that we need.
   if (pending_frame_->waiting_for_webxr_ ||
@@ -503,13 +493,6 @@ void OpenXrRenderLoop::MaybeCompositeAndSubmit(
   }
 
   TRACE_EVENT_END("xr", "success", copy_successful && submit_successful);
-  LOG(INFO) << "XRFRAME result frame="
-            << pending_frame_->render_info_->frame_id
-            << " can_submit=" << can_submit
-            << " copy=" << copy_successful
-            << " endframe=" << submit_successful
-            << " updated_layers=" << updated_layers.size();
-
   if (copy_successful && !submit_successful) {
     ExitPresent(ExitXrPresentReason::kSubmitFrameFailed);
     // ExitPresent() clears pending_frame_, so return here to avoid
@@ -585,10 +568,6 @@ void OpenXrRenderLoop::SubmitFrameMissing(
   const int expected_frame =
       pending_frame_ ? pending_frame_->render_info_->frame_id : -1;
   const bool matches_pending = pending_frame_ && expected_frame == frame_index;
-  LOG(INFO) << "XRFRAME missing frame=" << frame_index
-            << " expected=" << expected_frame
-            << " matches=" << matches_pending;
-
   // A late missing-frame notification must not clear the wait bit on a newer
   // pending frame. With asynchronous SharedImage completion on macOS this can
   // otherwise turn the next valid frame into an empty xrEndFrame.
@@ -993,13 +972,6 @@ void OpenXrRenderLoop::SubmitFrameDrawnIntoTexture(
     layer_ids.push_back(layer->layer_id);
   }
 
-  LOG(INFO) << "XRFRAME submit frame=" << frame_index
-            << " layers=" << layer_ids.size();
-  for (LayerId layer_id : layer_ids) {
-    LOG(INFO) << "XRFRAME submit-layer frame=" << frame_index
-              << " layer=" << layer_id;
-  }
-
   std::vector<gpu::SyncToken> combined_sync_tokens;
   std::vector<scoped_refptr<gpu::ClientSharedImage>> shared_images =
       graphics_binding_->EndSharedImagesExport(std::move(layer_updates),
@@ -1046,21 +1018,10 @@ void OpenXrRenderLoop::OnWebXrSyncTokensSignaled(
     std::vector<LayerId> updated_layers) {
   TRACE_EVENT_END("xr", perfetto::Track(frame_index));
   if (!is_presenting_ || !openxr_ || !context_provider_) {
-    LOG(INFO) << "XRFRAME sync-callback dropped frame=" << frame_index
-              << " presenting=" << is_presenting_
-              << " openxr=" << static_cast<bool>(openxr_)
-              << " context=" << static_cast<bool>(context_provider_);
     return;
   }
 
-  const int expected_frame =
-      pending_frame_ ? pending_frame_->render_info_->frame_id : -1;
-  const bool accepted = MarkFrameSubmitted(frame_index);
-  LOG(INFO) << "XRFRAME sync-callback frame=" << frame_index
-            << " expected=" << expected_frame
-            << " accepted=" << accepted
-            << " layers=" << updated_layers.size();
-  if (!accepted) {
+  if (!MarkFrameSubmitted(frame_index)) {
     return;
   }
   MaybeCompositeAndSubmit(updated_layers);
