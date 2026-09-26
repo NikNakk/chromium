@@ -511,6 +511,19 @@ void OpenXrGraphicsBinding::PopulateSharedImageData(
     if (!swapchain_info || !swapchain_info->shared_image) {
       continue;
     }
+#if BUILDFLAG(IS_MAC)
+    const gfx::Size expected_size(
+        layer_it->second->read_only_data().texture_width,
+        layer_it->second->read_only_data().texture_height);
+    if (swapchain_info->shared_image->size() != expected_size) {
+      LOG(ERROR) << "macOS WebXR composition SharedImage size mismatch: layer="
+                 << layer_id << " expected=" << expected_size.ToString()
+                 << " shared_image="
+                 << swapchain_info->shared_image->size().ToString()
+                 << " swapchain="
+                 << layer_it->second->GetSwapchainImageSize().ToString();
+    }
+#endif
     mojom::XRLayerFrameDataPtr layer_data = mojom::XRLayerFrameData::New();
     layer_data->layer_id = layer_id;
     layer_data->buffer_shared_image = swapchain_info->shared_image->Export();
