@@ -120,7 +120,7 @@ class OpenXrGraphicsBindingMetal::Impl {
     }
 
     if (scale_library == nil) {
-      static NSString* const kScaleShader = @R"metal(
+      static constexpr char kScaleShaderSource[] = R"metal(
 #include <metal_stdlib>
 using namespace metal;
 
@@ -154,9 +154,11 @@ fragment float4 xr_scale_fragment(
   return source.sample(source_sampler, in.texcoord);
 }
 )metal";
+      NSString* scale_shader =
+          [NSString stringWithUTF8String:kScaleShaderSource];
 
       NSError* error = nil;
-      scale_library = [device newLibraryWithSource:kScaleShader
+      scale_library = [device newLibraryWithSource:scale_shader
                                            options:nil
                                              error:&error];
       if (scale_library == nil) {
@@ -559,14 +561,14 @@ void OpenXrGraphicsBindingMetal::CreateSharedImages(
     if (transfer_size == runtime_size) {
       if (IOSurfaceRef runtime_surface = texture.iosurface) {
         swap_chain_info.shared_image = sii->CreateSharedImage(
-          direct_si_info,
-          gfx::GpuMemoryBufferHandle(gfx::ScopedIOSurface(
-              runtime_surface, base::scoped_policy::RETAIN)));
-      if (swap_chain_info.shared_image) {
-        impl_->fallback_textures.erase(metal_texture);
-        swap_chain_info.sync_token = sii->GenVerifiedSyncToken();
-        DVLOG(1) << __func__
-                 << ": using direct IOSurface OpenXR texture transport";
+            direct_si_info,
+            gfx::GpuMemoryBufferHandle(gfx::ScopedIOSurface(
+                runtime_surface, base::scoped_policy::RETAIN)));
+        if (swap_chain_info.shared_image) {
+          impl_->fallback_textures.erase(metal_texture);
+          swap_chain_info.sync_token = sii->GenVerifiedSyncToken();
+          DVLOG(1) << __func__
+                   << ": using direct IOSurface OpenXR texture transport";
           continue;
         }
         DLOG(WARNING) << __func__
