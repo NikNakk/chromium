@@ -26,6 +26,11 @@ OpenXrGraphicsBinding::OpenXrGraphicsBinding(
     : fb_composition_layer_ext_enabled_(extension_enum->ExtensionSupported(
           XR_FB_COMPOSITION_LAYER_IMAGE_LAYOUT_EXTENSION_NAME)) {
   if (fb_composition_layer_ext_enabled_) {
+    // This struct is chained through XrCompositionLayerProjection::next.
+    // Explicitly zero it so the extension chain terminates at next=nullptr.
+    // Some runtimes ignore an unknown tail pointer, but Meta XR Simulator
+    // deep-copies the full chain and will dereference an uninitialized next.
+    y_flip_layer_layout_ = {};
     y_flip_layer_layout_.type = XR_TYPE_COMPOSITION_LAYER_IMAGE_LAYOUT_FB;
     y_flip_layer_layout_.flags =
         XR_COMPOSITION_LAYER_IMAGE_LAYOUT_VERTICAL_FLIP_BIT_FB;
