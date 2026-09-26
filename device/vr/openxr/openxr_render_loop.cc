@@ -1131,7 +1131,10 @@ void OpenXrRenderLoop::CreateCompositionLayer(
     }
   };
 
-  if (!openxr_->IsFeatureEnabled(mojom::XRSessionFeature::LAYERS)) {
+  // The WebXR Layers API permits one explicit composition layer without the
+  // optional "layers" session feature. That feature gates multiple
+  // simultaneously enabled layers, not creation of a single layer backend.
+  if (!graphics_binding_->SupportsLayers()) {
     return;
   }
   if (!context_provider_) {
@@ -1149,8 +1152,9 @@ void OpenXrRenderLoop::CreateCompositionLayer(
 void OpenXrRenderLoop::UpdateCompositionLayer(
     const LayerId& layer_id,
     mojom::XRLayerMutableDataPtr layer_data) {
-  if (!openxr_->IsFeatureEnabled(mojom::XRSessionFeature::LAYERS)) {
-    layer_manager_receiver_.ReportBadMessage("Layers feature is not enabled.");
+  if (!graphics_binding_->SupportsLayers()) {
+    layer_manager_receiver_.ReportBadMessage(
+        "Composition layers are not supported.");
     return;
   }
 
@@ -1179,15 +1183,24 @@ void OpenXrRenderLoop::DestroyCompositionLayer(const LayerId& layer_id) {
 
 void OpenXrRenderLoop::SetEnabledCompositionLayers(
     const std::vector<LayerId>& layer_ids) {
-  if (!openxr_->IsFeatureEnabled(mojom::XRSessionFeature::LAYERS)) {
-    layer_manager_receiver_.ReportBadMessage("Layers feature is not enabled.");
+  if (!graphics_binding_->SupportsLayers()) {
+    layer_manager_receiver_.ReportBadMessage(
+        "Composition layers are not supported.");
     return;
   }
   if (!context_provider_) {
     layer_manager_receiver_.ReportBadMessage("Context was lost.");
     return;
   }
-  if (layer_ids.size() > openxr_->GetMaxRenderLayers()) {
+
+  // Without the optional WebXR "layers" feature, exactly one explicit
+  // composition layer is still legal. The feature only raises the simultaneous
+  // layer limit to the runtime's advertised maximum.
+  const size_t max_enabled_layers =
+      openxr_->IsFeatureEnabled(mojom::XRSessionFeature::LAYERS)
+          ? openxr_->GetMaxRenderLayers()
+          : 1u;
+  if (layer_ids.size() > max_enabled_layers) {
     layer_manager_receiver_.ReportBadMessage(
         "Tried to enable too many layers.");
     return;
