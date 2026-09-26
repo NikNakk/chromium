@@ -107,6 +107,36 @@ constexpr device::mojom::XRSessionFeature kDefaultInlineFeatures[] = {
     device::mojom::XRSessionFeature::REF_SPACE_VIEWER,
 };
 
+media::VideoSpatialFormat GetImmersiveMediaSpatialFormat(
+    HTMLVideoElement* video) {
+  media::VideoSpatialFormat spatial_format;
+  if (!video || !video->GetWebMediaPlayer()) {
+    return spatial_format;
+  }
+
+  spatial_format = video->GetWebMediaPlayer()->GetSpatialFormat();
+  if (spatial_format.projection_type != media::VideoProjectionType::kNone) {
+    return spatial_format;
+  }
+
+  // Some older YouTube 360 videos are still rendered by YouTube's spherical
+  // WebGL player, but the selected MSE stream does not carry projection
+  // metadata through Chromium's VideoDecoderConfig. In that case use the
+  // player's own spherical-control element as a narrow site-provided hint.
+  //
+  // This is intentionally not inferred from dimensions: ordinary 16:9 video
+  // can have exactly the same decoded size as YouTube's spherical streams.
+  if (video->GetDocument().QuerySelector(
+          AtomicString(".ytp-webgl-spherical-control"))) {
+    spatial_format.projection_type =
+        media::VideoProjectionType::kEquirect360;
+    LOG(ERROR) << "XRDBG immersive-media: using YouTube spherical-player "
+                  "fallback for missing stream projection metadata";
+  }
+
+  return spatial_format;
+}
+
 device::mojom::blink::XRSessionMode V8EnumToSessionMode(
     V8XRSessionMode::Enum mode) {
   switch (mode) {
@@ -1057,7 +1087,7 @@ void XRSystem::RequestImmersiveMediaSession(
   }
 
   const media::VideoSpatialFormat spatial_format =
-      video->GetWebMediaPlayer()->GetSpatialFormat();
+      GetImmersiveMediaSpatialFormat(video);
   const gfx::Size natural_size = video->GetWebMediaPlayer()->NaturalSize();
   LOG(ERROR) << "XRDBG immersive-media: fullscreen video format="
              << spatial_format.ToString() << " natural_size="
@@ -1171,7 +1201,7 @@ void XRSystem::OnImmersiveMediaSessionReturned(
   }
 
   const media::VideoSpatialFormat spatial_format =
-      video->GetWebMediaPlayer()->GetSpatialFormat();
+      GetImmersiveMediaSpatialFormat(video);
   if (spatial_format.projection_type == media::VideoProjectionType::kNone) {
     session->ForceEnd(XRSession::ShutdownPolicy::kWaitForResponse);
     immersive_media_video_ = nullptr;
