@@ -31,8 +31,14 @@ XRWebGLSubImage::XRWebGLSubImage(const gfx::Rect& viewport,
         color_texture_height_ != depth_stencil_texture_height_) {
       LOG(ERROR) << "WebXR color/depth descriptor size mismatch: color="
                  << color_texture_width_ << "x" << color_texture_height_
-                 << " depth=" << depth_stencil_texture_width_ << "x"
-                 << depth_stencil_texture_height_
+                 << " depth="
+                 << (depth_stencil_texture_width_.has_value()
+                         ? static_cast<int>(*depth_stencil_texture_width_)
+                         : -1)
+                 << "x"
+                 << (depth_stencil_texture_height_.has_value()
+                         ? static_cast<int>(*depth_stencil_texture_height_)
+                         : -1)
                  << " image_index="
                  << (image_index_.has_value()
                          ? static_cast<int>(*image_index_)
