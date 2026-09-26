@@ -45,6 +45,15 @@
 (allow file-read* file-write* file-write-create
   (subpath meta-xr-simulator-legacy-data-dir))
 
+; Meta XR Simulator hosts its frontend synchronization RPC on loopback (the
+; current build uses ::1 with an ephemeral TCP port). Permit only localhost
+; bind/inbound/outbound traffic; the isolated XR service still has no general
+; network access.
+(allow network-bind network-inbound
+  (local ip "localhost:*"))
+(allow network-outbound
+  (remote ip "localhost:*"))
+
 ; Monado's native OpenXR client still uses its ordinary Unix-domain IPC
 ; channel to monado-service. On macOS, without XDG overrides, the socket lives
 ; below ~/Library/Caches/monado. Permit only that runtime directory and socket.
