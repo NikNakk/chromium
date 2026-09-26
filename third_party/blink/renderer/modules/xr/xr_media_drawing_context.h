@@ -19,7 +19,9 @@ class XRSession;
 
 class XRMediaDrawingContext : public XRLayerDrawingContext {
  public:
-  XRMediaDrawingContext(XRSession* session, HTMLVideoElement* video);
+  XRMediaDrawingContext(XRSession* session,
+                        HTMLVideoElement* video,
+                        bool needs_eac_reprojection);
   ~XRMediaDrawingContext() override;
 
   void OnFrameStart() override;
@@ -32,6 +34,9 @@ class XRMediaDrawingContext : public XRLayerDrawingContext {
   bool ShouldFlipY() const override { return true; }
   bool NeedsRasterAccess() const override { return true; }
   bool IsMediaLayer() const override { return true; }
+  bool NeedsEacReprojection() const override {
+    return needs_eac_reprojection_;
+  }
 
   XRSession* session() const override { return session_.Get(); }
   std::unique_ptr<SharedImageHolder> TransferToSharedImageHolder() override;
@@ -51,6 +56,7 @@ class XRMediaDrawingContext : public XRLayerDrawingContext {
   uint16_t height_ = 0;
   uint16_t max_texture_size_ = 2048;
   bool content_changed_ = false;
+  bool needs_eac_reprojection_ = false;
 };
 
 }  // namespace blink

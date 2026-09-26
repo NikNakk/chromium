@@ -849,6 +849,9 @@ struct XRLayerReadOnlyData {
   // by some codecs, where (0,0) is the top-left corner of the image.
   bool flip_y;
   bool needs_raster_access;
+  // The source texture contains YouTube-style Equi-Angular Cubemap packing
+  // and must be reprojected before being submitted as an equirect layer.
+  bool needs_eac_reprojection;
 };
 
 // Mutable layer data. It is used to created a layer,

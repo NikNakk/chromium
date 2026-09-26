@@ -107,34 +107,42 @@ constexpr device::mojom::XRSessionFeature kDefaultInlineFeatures[] = {
     device::mojom::XRSessionFeature::REF_SPACE_VIEWER,
 };
 
-media::VideoSpatialFormat GetImmersiveMediaSpatialFormat(
-    HTMLVideoElement* video) {
+struct ImmersiveMediaSpatialFormat {
   media::VideoSpatialFormat spatial_format;
+  bool needs_eac_reprojection = false;
+};
+
+ImmersiveMediaSpatialFormat GetImmersiveMediaSpatialFormat(
+    HTMLVideoElement* video) {
+  ImmersiveMediaSpatialFormat result;
   if (!video || !video->GetWebMediaPlayer()) {
-    return spatial_format;
+    return result;
   }
 
-  spatial_format = video->GetWebMediaPlayer()->GetSpatialFormat();
-  if (spatial_format.projection_type != media::VideoProjectionType::kNone) {
-    return spatial_format;
+  result.spatial_format = video->GetWebMediaPlayer()->GetSpatialFormat();
+  if (result.spatial_format.projection_type !=
+      media::VideoProjectionType::kNone) {
+    return result;
   }
 
-  // Some older YouTube 360 videos are still rendered by YouTube's spherical
-  // WebGL player, but the selected MSE stream does not carry projection
-  // metadata through Chromium's VideoDecoderConfig. In that case use the
-  // player's own spherical-control element as a narrow site-provided hint.
+  // Some YouTube 360 streams use Equi-Angular Cubemap (EAC) packing without
+  // exposing a projection that Chromium currently maps into VideoSpatialFormat.
+  // YouTube's own spherical control is a narrow site-provided signal that the
+  // raw decoded frame is spatial. Treat this fallback as EAC and reproject it
+  // on the GPU before submitting it as an OpenXR equirect layer.
   //
   // This is intentionally not inferred from dimensions: ordinary 16:9 video
   // can have exactly the same decoded size as YouTube's spherical streams.
   if (video->GetDocument().QuerySelector(
           AtomicString(".ytp-webgl-spherical-control"))) {
-    spatial_format.projection_type =
+    result.spatial_format.projection_type =
         media::VideoProjectionType::kEquirect360;
-    LOG(ERROR) << "XRDBG immersive-media: using YouTube spherical-player "
-                  "fallback for missing stream projection metadata";
+    result.needs_eac_reprojection = true;
+    LOG(ERROR) << "XRDBG immersive-media: using YouTube EAC fallback for "
+                  "missing stream projection metadata";
   }
 
-  return spatial_format;
+  return result;
 }
 
 device::mojom::blink::XRSessionMode V8EnumToSessionMode(
@@ -1086,8 +1094,10 @@ void XRSystem::RequestImmersiveMediaSession(
     return;
   }
 
-  const media::VideoSpatialFormat spatial_format =
+  const ImmersiveMediaSpatialFormat immersive_format =
       GetImmersiveMediaSpatialFormat(video);
+  const media::VideoSpatialFormat& spatial_format =
+      immersive_format.spatial_format;
   const gfx::Size natural_size = video->GetWebMediaPlayer()->NaturalSize();
   LOG(ERROR) << "XRDBG immersive-media: fullscreen video format="
              << spatial_format.ToString() << " natural_size="
@@ -1200,8 +1210,10 @@ void XRSystem::OnImmersiveMediaSessionReturned(
     return;
   }
 
-  const media::VideoSpatialFormat spatial_format =
+  const ImmersiveMediaSpatialFormat immersive_format =
       GetImmersiveMediaSpatialFormat(video);
+  const media::VideoSpatialFormat& spatial_format =
+      immersive_format.spatial_format;
   if (spatial_format.projection_type == media::VideoProjectionType::kNone) {
     session->ForceEnd(XRSession::ShutdownPolicy::kWaitForResponse);
     immersive_media_video_ = nullptr;
@@ -1210,8 +1222,8 @@ void XRSystem::OnImmersiveMediaSessionReturned(
 
   auto* space = MakeGarbageCollected<XRReferenceSpace>(
       session, device::mojom::blink::XRReferenceSpaceType::kLocal);
-  auto* drawing_context =
-      MakeGarbageCollected<XRMediaDrawingContext>(session, video);
+  auto* drawing_context = MakeGarbageCollected<XRMediaDrawingContext>(
+      session, video, immersive_format.needs_eac_reprojection);
 
   auto* init = XREquirectLayerInit::Create();
   init->setSpace(space);

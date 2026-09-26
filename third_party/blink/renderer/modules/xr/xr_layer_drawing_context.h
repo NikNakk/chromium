@@ -28,6 +28,7 @@ class XRLayerDrawingContext : public GarbageCollected<XRLayerDrawingContext>,
   virtual bool ShouldFlipY() const { return false; }
   virtual bool IsMediaLayer() const { return false; }
   virtual bool NeedsRasterAccess() const { return false; }
+  virtual bool NeedsEacReprojection() const { return false; }
 
   virtual void Trace(Visitor* visitor) const {}
 };

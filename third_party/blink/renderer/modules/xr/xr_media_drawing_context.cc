@@ -25,9 +25,13 @@ class VideoFrameSharedImageCache;
 
 namespace blink {
 
-XRMediaDrawingContext::XRMediaDrawingContext(XRSession* session,
-                                             HTMLVideoElement* video)
-    : session_(session), video_(video) {
+XRMediaDrawingContext::XRMediaDrawingContext(
+    XRSession* session,
+    HTMLVideoElement* video,
+    bool needs_eac_reprojection)
+    : session_(session),
+      video_(video),
+      needs_eac_reprojection_(needs_eac_reprojection) {
   frame_transport_delegate_ =
       MakeGarbageCollected<XRRasterFrameTransportDelegate>();
 

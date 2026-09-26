@@ -247,6 +247,97 @@ fragment float4 xr_scale_fragment(
     sampler source_sampler [[sampler(0)]]) {
   return source.sample(source_sampler, in.texcoord);
 }
+
+float2 xr_project_eac(float3 w, float2 source_size) {
+  constexpr float kPi = 3.14159265358979323846;
+  float3 p = float3(w.x, -w.y, -w.z);
+  float ax = abs(p.x);
+  float ay = abs(p.y);
+  float az = abs(p.z);
+  float uf = 0.0;
+  float vf = 0.0;
+  int col = 1;
+  int row = 0;
+  int rotation = 0;
+
+  if (ax >= ay && ax >= az) {
+    if (p.x >= 0.0) {
+      uf = -p.z / p.x;
+      vf = p.y / p.x;
+      col = 2;
+      row = 0;
+    } else {
+      uf = -p.z / p.x;
+      vf = -p.y / p.x;
+      col = 0;
+      row = 0;
+    }
+  } else if (ay >= ax && ay >= az) {
+    if (p.y >= 0.0) {
+      uf = p.x / p.y;
+      vf = -p.z / p.y;
+      col = 0;
+      row = 1;
+      rotation = 3;
+    } else {
+      uf = -p.x / p.y;
+      vf = -p.z / p.y;
+      col = 2;
+      row = 1;
+      rotation = 3;
+    }
+  } else {
+    if (p.z >= 0.0) {
+      uf = p.x / p.z;
+      vf = p.y / p.z;
+      col = 1;
+      row = 0;
+    } else {
+      uf = p.x / p.z;
+      vf = -p.y / p.z;
+      col = 1;
+      row = 1;
+      rotation = 1;
+    }
+  }
+
+  if (rotation == 1) {
+    float t = uf;
+    uf = -vf;
+    vf = t;
+  } else if (rotation == 3) {
+    float t = -uf;
+    uf = vf;
+    vf = t;
+  }
+
+  uf = (2.0 / kPi) * atan(uf) + 0.5;
+  vf = (2.0 / kPi) * atan(vf) + 0.5;
+  float u_pad = 2.0 / max(source_size.x, 1.0);
+  float v_pad = 2.0 / max(source_size.y, 1.0);
+  return float2(
+      (uf + float(col)) * (1.0 - 2.0 * u_pad) / 3.0 + u_pad,
+      vf * (0.5 - 2.0 * v_pad) + v_pad + 0.5 * float(row));
+}
+
+fragment float4 xr_eac_fragment(
+    ScaleVertexOut in [[stage_in]],
+    texture2d<float> source [[texture(0)]],
+    sampler source_sampler [[sampler(0)]]) {
+  constexpr float kPi = 3.14159265358979323846;
+  float2 uv = in.texcoord;
+  float longitude = (uv.x - 0.5) * (2.0 * kPi);
+  float latitude = (0.5 - uv.y) * kPi;
+  float cos_latitude = cos(latitude);
+  float3 direction = normalize(float3(
+      sin(longitude) * cos_latitude,
+      sin(latitude),
+      -cos(longitude) * cos_latitude));
+  float2 source_uv =
+      xr_project_eac(direction,
+                     float2(float(source.get_width()), float(source.get_height())));
+  return source.sample(source_sampler, source_uv);
+}
 )metal";
       NSString* scale_shader =
           [NSString stringWithUTF8String:kScaleShaderSource];
@@ -264,8 +355,9 @@ fragment float4 xr_scale_fragment(
 
       scale_vertex = [scale_library newFunctionWithName:@"xr_scale_vertex"];
       scale_fragment = [scale_library newFunctionWithName:@"xr_scale_fragment"];
-      if (scale_vertex == nil || scale_fragment == nil) {
-        DLOG(ERROR) << "OpenXR Metal scale shader functions are unavailable";
+      eac_fragment = [scale_library newFunctionWithName:@"xr_eac_fragment"];
+      if (scale_vertex == nil || scale_fragment == nil || eac_fragment == nil) {
+        DLOG(ERROR) << "OpenXR Metal media shader functions are unavailable";
         return nil;
       }
 
@@ -302,14 +394,47 @@ fragment float4 xr_scale_fragment(
     return pipeline;
   }
 
+  id<MTLRenderPipelineState> EacPipeline(MTLPixelFormat pixel_format) {
+    auto existing = eac_pipelines.find(static_cast<uint64_t>(pixel_format));
+    if (existing != eac_pipelines.end()) {
+      return existing->second;
+    }
+
+    // Ensure the shared shader library/functions and sampler are initialized.
+    if (!ScalePipeline(pixel_format) || eac_fragment == nil) {
+      return nil;
+    }
+
+    MTLRenderPipelineDescriptor* descriptor =
+        [[MTLRenderPipelineDescriptor alloc] init];
+    descriptor.vertexFunction = scale_vertex;
+    descriptor.fragmentFunction = eac_fragment;
+    descriptor.colorAttachments[0].pixelFormat = pixel_format;
+
+    NSError* error = nil;
+    id<MTLRenderPipelineState> pipeline =
+        [device newRenderPipelineStateWithDescriptor:descriptor error:&error];
+    if (pipeline == nil) {
+      DLOG(ERROR) << "Failed to create OpenXR Metal EAC pipeline: "
+                  << (error ? error.localizedDescription.UTF8String
+                            : "unknown error");
+      return nil;
+    }
+
+    eac_pipelines.emplace(static_cast<uint64_t>(pixel_format), pipeline);
+    return pipeline;
+  }
+
   id<MTLSamplerState> ScaleSampler() const { return scale_sampler; }
 
  private:
   id<MTLLibrary> __strong scale_library = nil;
   id<MTLFunction> __strong scale_vertex = nil;
   id<MTLFunction> __strong scale_fragment = nil;
+  id<MTLFunction> __strong eac_fragment = nil;
   id<MTLSamplerState> __strong scale_sampler = nil;
   std::map<uint64_t, id<MTLRenderPipelineState>> scale_pipelines;
+  std::map<uint64_t, id<MTLRenderPipelineState>> eac_pipelines;
 };
 
 OpenXrGraphicsBindingMetal::OpenXrGraphicsBindingMetal(
@@ -504,8 +629,45 @@ bool OpenXrGraphicsBindingMetal::RenderLayer(
     return false;
   }
 
-  if (source_texture.width == runtime_texture.width &&
-      source_texture.height == runtime_texture.height) {
+  if (layer.read_only_data().needs_eac_reprojection) {
+    id<MTLRenderPipelineState> pipeline =
+        impl_->EacPipeline(runtime_texture.pixelFormat);
+    id<MTLSamplerState> sampler = impl_->ScaleSampler();
+    if (!pipeline || !sampler ||
+        !(runtime_texture.usage & MTLTextureUsageRenderTarget)) {
+      DLOG(ERROR) << __func__
+                  << ": runtime texture cannot accept EAC reprojection";
+      return false;
+    }
+
+    MTLRenderPassDescriptor* pass =
+        [MTLRenderPassDescriptor renderPassDescriptor];
+    pass.colorAttachments[0].texture = runtime_texture;
+    pass.colorAttachments[0].loadAction = MTLLoadActionDontCare;
+    pass.colorAttachments[0].storeAction = MTLStoreActionStore;
+
+    id<MTLRenderCommandEncoder> encoder =
+        [command_buffer renderCommandEncoderWithDescriptor:pass];
+    if (!encoder) {
+      DLOG(ERROR) << __func__
+                  << ": failed to create Metal EAC render encoder";
+      return false;
+    }
+
+    [encoder setRenderPipelineState:pipeline];
+    [encoder setFragmentTexture:source_texture atIndex:0];
+    [encoder setFragmentSamplerState:sampler atIndex:0];
+    [encoder drawPrimitives:MTLPrimitiveTypeTriangle
+                vertexStart:0
+                vertexCount:3];
+    [encoder endEncoding];
+
+    LOG(INFO) << "XRFRAME metal-eac-reproject layer=" << layer.GetLayerId()
+              << " source=" << source_texture.width << "x"
+              << source_texture.height << " output=" << runtime_texture.width
+              << "x" << runtime_texture.height;
+  } else if (source_texture.width == runtime_texture.width &&
+             source_texture.height == runtime_texture.height) {
     id<MTLBlitCommandEncoder> blit = [command_buffer blitCommandEncoder];
     if (!blit) {
       DLOG(ERROR) << __func__ << ": failed to create Metal blit command";
@@ -666,7 +828,8 @@ void OpenXrGraphicsBindingMetal::CreateSharedImages(
     // Do this before considering any generic IOSurface sharing. Monado's helper
     // also supplies the runtime-specific cross-process synchronization needed
     // for a runtime-owned texture to be written safely by Chromium.
-    if (transfer_size == runtime_size && publish_texture) {
+    if (transfer_size == runtime_size && publish_texture &&
+        !layer.read_only_data().needs_eac_reprojection) {
       uint64_t texture_token = 0;
       if (publish_texture(metal_texture, &texture_token) == 0 &&
           texture_token != 0) {
