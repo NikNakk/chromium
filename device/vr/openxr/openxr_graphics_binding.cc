@@ -708,6 +708,11 @@ void OpenXrGraphicsBinding::SetEnabledCompositionLayers(
         // occur between layer creation and activation.
         const gfx::Size layer_size(layer->read_only_data().texture_width,
                                    layer->read_only_data().texture_height);
+        DVLOG(1) << __func__ << ": macOS projection layer " << id
+                 << " descriptor=" << layer_size.ToString()
+                 << " swapchain="
+                 << layer->GetSwapchainImageSize().ToString()
+                 << " has_swapchain=" << layer->HasColorSwapchain();
         if (layer->GetSwapchainImageSize() != layer_size) {
           LOG(WARNING) << __func__ << ": correcting macOS projection layer "
                        << id << " swapchain size from "
