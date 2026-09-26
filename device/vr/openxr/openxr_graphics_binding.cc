@@ -621,8 +621,17 @@ void OpenXrGraphicsBinding::SetEnabledCompositionLayers(
   for (auto& [id, layer] : layers_) {
     if (enabled_layers.contains(id)) {
       if (!layer->HasColorSwapchain()) {
+        uint32_t layer_sample_count = swapchain_sample_count;
+#if BUILDFLAG(IS_MAC)
+        // The direct Metal SharedImage import path only supports
+        // single-sample 2D textures. Match the base-layer policy here for
+        // explicit WebXR composition layers.
+        if (RequiresSharedImages()) {
+          layer_sample_count = 1;
+        }
+#endif
         XrResult result =
-            layer->CreateSwapchain(session, swapchain_sample_count);
+            layer->CreateSwapchain(session, layer_sample_count);
         CHECK_EQ(result, XR_SUCCESS);
         CreateSharedImages(*layer, sii);
       }
