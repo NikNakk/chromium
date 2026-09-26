@@ -765,9 +765,21 @@ void OpenXrGraphicsBindingMetal::CreateSharedImages(
     usage |= gpu::SHARED_IMAGE_USAGE_RASTER_READ |
              gpu::SHARED_IMAGE_USAGE_RASTER_WRITE;
   }
-  const gfx::ColorSpace color_space(
-      gfx::ColorSpace::PrimaryID::BT709,
-      gfx::ColorSpace::TransferID::LINEAR);
+  // Match the SharedImage's transfer function to the negotiated Metal
+  // swapchain format. In particular, MTLPixelFormatBGRA8Unorm_sRGB performs
+  // sRGB<->linear conversion, so describing the same storage to Chromium as
+  // linear can crush midtones/shadows when the bytes are later consumed as
+  // sRGB by the OpenXR runtime.
+  const bool is_srgb =
+      swapchain_format_ ==
+      static_cast<int64_t>(MTLPixelFormatBGRA8Unorm_sRGB);
+  const gfx::ColorSpace color_space =
+      is_srgb
+          ? gfx::ColorSpace::CreateSRGB()
+          : gfx::ColorSpace(gfx::ColorSpace::PrimaryID::BT709,
+                            gfx::ColorSpace::TransferID::LINEAR,
+                            gfx::ColorSpace::MatrixID::RGB,
+                            gfx::ColorSpace::RangeID::FULL);
   const gpu::SharedImageInfo direct_si_info{
       viz::SinglePlaneFormat::kBGRA_8888, runtime_size, color_space, usage,
       "OpenXrMetalDirect"};
@@ -899,7 +911,8 @@ void OpenXrGraphicsBindingMetal::CreateSharedImages(
               << ": transport=iosurface-copy layer=" << layer.GetLayerId()
               << " transfer=" << transfer_size.ToString()
               << " runtime=" << runtime_size.ToString()
-              << " runtime_iosurface=" << (texture.iosurface != nullptr);
+              << " runtime_iosurface=" << (texture.iosurface != nullptr)
+              << " srgb=" << is_srgb;
   }
 }
 
