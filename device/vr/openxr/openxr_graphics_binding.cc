@@ -85,6 +85,7 @@ void OpenXrGraphicsBinding::OnSessionCreated(XrSpace local_space,
 
 void OpenXrGraphicsBinding::OnSessionDestroyed(gpu::SharedImageInterface* sii) {
   last_rendered_base_projection_views_.clear();
+  last_rendered_layer_projection_views_.clear();
   if (base_layer_) {
     base_layer_->DestroySwapchain(sii);
     base_layer_.reset();
@@ -273,9 +274,32 @@ std::unique_ptr<OpenXrLayers> OpenXrGraphicsBinding::GetLayersForViewConfig(
       continue;
     }
     OpenXrCompositionLayer& layer = *layer_it->second;
+
+    // A swapchain can only be referenced by xrEndFrame after at least one
+    // image has been released to the runtime. During a newly enabled layer's
+    // first sparse frame there may be nothing valid to present yet.
+    if (!layer.is_rendered() && !layer.has_last_released_swapchain_image()) {
+      continue;
+    }
+
     if (layer.type() == OpenXrCompositionLayer::Type::kProjection) {
+      auto projection_views = GetProjectionViews(view_config, layer);
+      if (layer.is_rendered()) {
+        last_rendered_layer_projection_views_[layer_id][view_config.Type()] =
+            projection_views;
+      } else {
+        auto layer_cache =
+            last_rendered_layer_projection_views_.find(layer_id);
+        if (layer_cache != last_rendered_layer_projection_views_.end()) {
+          auto view_cache = layer_cache->second.find(view_config.Type());
+          if (view_cache != layer_cache->second.end()) {
+            projection_views = view_cache->second;
+          }
+        }
+      }
+
       openxr_layers->AddCompositionLayer(openxr, layer,
-                                         GetProjectionViews(view_config, layer),
+                                         std::move(projection_views),
                                          GetFlipLayerLayout(layer));
     } else {
       openxr_layers->AddCompositionLayer(openxr, layer, {},
@@ -459,8 +483,15 @@ XrResult OpenXrGraphicsBinding::ReleaseActiveSwapchainImages() {
   // Also some layers may have been removed from layers_sequence_ before
   // xrEndFrame, we want to release all.
   for (const auto& [_, layer] : layers_) {
-    // Reuse the active swapchain image if it wasn't rendered this cycle.
+    // Sparse explicit layers follow the same rule as the base layer below.
+    // Usually an untouched newly-acquired image can remain held while
+    // xrEndFrame keeps presenting the previously released image. If the
+    // runtime reacquired that *same* image, however, there is no longer a
+    // runtime-owned image to present, so release it unchanged.
     if (!layer->is_rendered()) {
+      if (layer->active_swapchain_image_is_last_released()) {
+        RETURN_IF_XR_FAILED(layer->ReleaseActiveSwapchainImage());
+      }
       continue;
     }
     RETURN_IF_XR_FAILED(layer->ReleaseActiveSwapchainImage());
@@ -682,6 +713,7 @@ void OpenXrGraphicsBinding::DestroyCompositionLayer(
   }
 
   layer_it->second->DestroySwapchain(sii);
+  last_rendered_layer_projection_views_.erase(layer_id);
   layers_.erase(layer_it);
 }
 
