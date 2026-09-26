@@ -4,6 +4,7 @@
 
 #include "third_party/blink/renderer/modules/xr/xr_webgl_sub_image.h"
 
+#include "base/logging.h"
 #include "third_party/blink/renderer/modules/webgl/webgl_unowned_texture.h"
 
 namespace blink {
@@ -25,6 +26,18 @@ XRWebGLSubImage::XRWebGLSubImage(const gfx::Rect& viewport,
     depth_stencil_texture_width_ = depth_stencil_swap_chain->descriptor().width;
     depth_stencil_texture_height_ =
         depth_stencil_swap_chain->descriptor().height;
+
+    if (color_texture_width_ != depth_stencil_texture_width_ ||
+        color_texture_height_ != depth_stencil_texture_height_) {
+      LOG(ERROR) << "WebXR color/depth descriptor size mismatch: color="
+                 << color_texture_width_ << "x" << color_texture_height_
+                 << " depth=" << depth_stencil_texture_width_ << "x"
+                 << depth_stencil_texture_height_
+                 << " image_index="
+                 << (image_index_.has_value()
+                         ? static_cast<int>(*image_index_)
+                         : -1);
+    }
   }
 
   if (motion_vector_swap_chain) {
