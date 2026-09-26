@@ -11,11 +11,6 @@
 
 (allow ipc-posix-shm)
 
-; Monado helper used to resolve opaque Metal texture tokens. Keep this to one
-; installed dylib rather than granting the GPU process general library access.
-(allow file-read* file-map-executable
-  (literal "/usr/local/lib/libmonado_metal_xpc_client.dylib"))
-
 ; Allow communication between the GPU process and the UI server.
 (allow mach-lookup
   ; Needed for AudioToolbox AAC encoding (https://crbug.com/1321287) and
@@ -37,8 +32,6 @@
   (global-name "com.apple.system.opendirectoryd.membership") ; https://crbug.com/1126350#c5
   (global-name "com.apple.tsm.uiserver")
   (global-name "com.apple.windowserver.active")
-  ; Monado macOS OpenXR Metal shared-texture side channel.
-  (global-name "org.freedesktop.monado.metal-ipc")
   ; Needed for VideoToolbox usage - https://crbug.com/767037
   (xpc-service-name "com.apple.coremedia.videodecoder")
   (xpc-service-name "com.apple.coremedia.videoencoder")

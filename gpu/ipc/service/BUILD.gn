@@ -120,8 +120,6 @@ component("service") {
     if (is_mac) {
       sources += [
         "image_transport_surface_mac.mm",
-        "metal_shared_texture_resolver_mac.mm",
-        "metal_shared_texture_resolver_mac.h",
       ]
       deps += [
         "//ui/display",
@@ -131,7 +129,6 @@ component("service") {
       frameworks = [
         "CoreGraphics.framework",
         "IOSurface.framework",
-        "Metal.framework",
         "OpenGL.framework",
         "QuartzCore.framework",
       ]
