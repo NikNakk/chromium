@@ -74,13 +74,6 @@ class SharedImageInterfaceProxy {
       gfx::GpuMemoryBufferHandle handle,
       std::optional<SharedImagePoolId> pool_id = std::nullopt);
 
-#if BUILDFLAG(IS_MAC)
-  Mailbox CreateSharedImageFromMetalTextureToken(
-      const SharedImageInfo& si_info,
-      uint64_t texture_token,
-      uint32_t array_slice);
-#endif
-
   void CopyToGpuMemoryBuffer(const SyncToken& sync_token,
                              const Mailbox& mailbox);
 

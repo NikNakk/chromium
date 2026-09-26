@@ -227,30 +227,6 @@ Mailbox SharedImageInterfaceProxy::CreateSharedImage(
   return mailbox;
 }
 
-#if BUILDFLAG(IS_MAC)
-Mailbox SharedImageInterfaceProxy::CreateSharedImageFromMetalTextureToken(
-    const SharedImageInfo& si_info,
-    uint64_t texture_token,
-    uint32_t array_slice) {
-  auto mailbox = Mailbox::Generate();
-  auto params = mojom::CreateSharedImageWithMetalTextureTokenParams::New();
-  params->mailbox = mailbox;
-  params->si_info = CreateSharedImageInfo(si_info);
-  params->texture_token = texture_token;
-  params->array_slice = array_slice;
-
-  base::AutoLock lock(lock_);
-  last_flush_id_ = host_->EnqueueDeferredMessage(
-      mojom::DeferredRequestParams::NewSharedImageRequest(
-          mojom::DeferredSharedImageRequest::
-              NewCreateSharedImageWithMetalTextureToken(std::move(params))),
-      /*sync_token_fences=*/{}, ++next_release_id_);
-  host_->EnsureFlush(last_flush_id_);
-  AddMailbox(mailbox);
-  return mailbox;
-}
-#endif
-
 void SharedImageInterfaceProxy::CopyToGpuMemoryBuffer(
     const SyncToken& sync_token,
     const Mailbox& mailbox) {

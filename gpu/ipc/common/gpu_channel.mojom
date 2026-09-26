@@ -372,11 +372,6 @@ union DeferredSharedImageRequest {
   // See CreateSharedImageWithBufferParams.
   CreateSharedImageWithBufferParams create_shared_image_with_buffer;
 
-  // See CreateSharedImageWithMetalTextureTokenParams.
-  [EnableIf=is_mac]
-  CreateSharedImageWithMetalTextureTokenParams
-      create_shared_image_with_metal_texture_token;
-
   // Registers a new shared memory region to share with the GPU process for
   // uploading shared image data.
   mojo_base.mojom.ReadOnlySharedMemoryRegion register_upload_buffer;
@@ -482,25 +477,6 @@ struct CreateSharedImageWithBufferParams {
   // An optional SharedImagePoolId which indicates the pool this shared image
   // is created from.
   SharedImagePoolId? pool_id;
-};
-
-[EnableIf=is_mac]
-struct CreateSharedImageWithMetalTextureTokenParams {
-  // The mailbox used to identify the shared image.
-  Mailbox mailbox;
-
-  // Information about the shared image.
-  SharedImageInfo si_info;
-
-  // Opaque one-time token resolved by the macOS OpenXR Metal texture provider
-  // in the GPU process. Chromium never serializes an MTLTexture or
-  // MTLSharedTextureHandle through Mojo.
-  uint64 texture_token;
-
-  // Slice of an array texture to expose as a 2D SharedImage. Current Chromium
-  // OpenXR swapchains are double-wide 2D textures and use slice 0, but keeping
-  // this explicit preserves support for array-backed runtimes.
-  uint32 array_slice;
 };
 
 // Updates the contents of a shared image from whatever is backing it, if

@@ -195,28 +195,6 @@ scoped_refptr<ClientSharedImage> ClientSharedImageInterface::CreateSharedImage(
                                                  holder_, buffer_handle_type);
 }
 
-#if BUILDFLAG(IS_MAC)
-scoped_refptr<ClientSharedImage>
-ClientSharedImageInterface::CreateSharedImageFromMetalTextureToken(
-    const SharedImageInfo& si_info,
-    uint64_t texture_token,
-    uint32_t array_slice) {
-  DCHECK(gpu::IsValidClientUsage(si_info.usage))
-      << static_cast<uint32_t>(si_info.usage);
-  CHECK(!si_info.format.PrefersExternalSampler()) << si_info.format.ToString();
-
-  auto mailbox = proxy_->CreateSharedImageFromMetalTextureToken(
-      si_info, texture_token, array_slice);
-  if (mailbox.IsZero()) {
-    return nullptr;
-  }
-
-  return base::MakeRefCounted<ClientSharedImage>(
-      AddMailbox(mailbox), si_info, GenUnverifiedSyncToken(), holder_,
-      gfx::EMPTY_BUFFER);
-}
-#endif
-
 scoped_refptr<ClientSharedImage>
 ClientSharedImageInterface::CreateSharedImageForMLTensor(
     std::string debug_label,
