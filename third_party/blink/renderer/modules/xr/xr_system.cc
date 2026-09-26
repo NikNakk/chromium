@@ -1090,6 +1090,7 @@ void XRSystem::RequestImmersiveMediaSession(
 
   auto options = device::mojom::blink::XRSessionOptions::New();
   options->mode = device::mojom::blink::XRSessionMode::kImmersiveVr;
+  options->is_ua_immersive_media = true;
   for (auto feature : kDefaultImmersiveVrFeatures) {
     options->required_features.push_back(feature);
   }

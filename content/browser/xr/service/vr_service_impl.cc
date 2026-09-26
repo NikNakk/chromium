@@ -5,6 +5,9 @@
 #include "content/browser/xr/service/vr_service_impl.h"
 
 #include <algorithm>
+#include <array>
+#include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -15,6 +18,7 @@
 #include "base/metrics/histogram_macros.h"
 #include "base/stl_util.h"
 #include "base/task/sequenced_task_runner.h"
+#include "base/task/thread_pool.h"
 #include "base/time/time.h"
 #include "base/trace_event/common/trace_event_common.h"
 #include "build/build_config.h"
@@ -53,7 +57,100 @@
 #include "base/android/device_info.h"
 #endif
 
+#if BUILDFLAG(IS_MAC)
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <sys/time.h>
+#include <unistd.h>
+#endif
+
 namespace {
+
+#if BUILDFLAG(IS_MAC)
+
+constexpr uint16_t kSwiftXrShellHandoffPort = 49375;
+
+std::string SendSwiftXrShellHandoffCommand(std::string_view command) {
+  const int fd = socket(AF_INET, SOCK_STREAM, 0);
+  if (fd < 0) {
+    return {};
+  }
+
+  int no_sigpipe = 1;
+  setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &no_sigpipe, sizeof(no_sigpipe));
+
+  timeval timeout = {.tv_sec = 0, .tv_usec = 250000};
+  setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+  setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
+
+  sockaddr_in address = {};
+  address.sin_family = AF_INET;
+  address.sin_port = htons(kSwiftXrShellHandoffPort);
+  address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+
+  if (connect(fd, reinterpret_cast<sockaddr*>(&address), sizeof(address)) != 0) {
+    close(fd);
+    return {};
+  }
+
+  std::string request = "POST /";
+  request.append(command);
+  request.append(
+      " HTTP/1.1\r\nHost: 127.0.0.1:49375\r\n"
+      "X-SwiftXR-Handoff: 1\r\nContent-Length: 0\r\n"
+      "Connection: close\r\n\r\n");
+
+  size_t offset = 0;
+  while (offset < request.size()) {
+    const ssize_t written =
+        send(fd, request.data() + offset, request.size() - offset, 0);
+    if (written <= 0) {
+      close(fd);
+      return {};
+    }
+    offset += static_cast<size_t>(written);
+  }
+
+  std::string response;
+  std::array<char, 2048> buffer;
+  while (response.size() < 8192) {
+    const ssize_t count = recv(fd, buffer.data(), buffer.size(), 0);
+    if (count <= 0) {
+      break;
+    }
+    response.append(buffer.data(), static_cast<size_t>(count));
+  }
+  close(fd);
+
+  if (!response.starts_with("HTTP/1.1 200")) {
+    return {};
+  }
+
+  const size_t body = response.find("\r\n\r\n");
+  if (body == std::string::npos) {
+    return {};
+  }
+  return response.substr(body + 4);
+}
+
+bool PrepareSwiftXrShellForOpenXr() {
+  const std::string response = SendSwiftXrShellHandoffCommand("prepare");
+  if (response.empty()) {
+    return false;
+  }
+
+  LOG(ERROR) << "XRDBG: SwiftXR Shell /prepare response=" << response;
+  return response.find("cooperative") != std::string::npos;
+}
+
+void ResumeSwiftXrShellAfterOpenXr() {
+  const std::string response = SendSwiftXrShellHandoffCommand("resume");
+  if (!response.empty()) {
+    LOG(ERROR) << "XRDBG: SwiftXR Shell /resume response=" << response;
+  }
+}
+
+#endif  // BUILDFLAG(IS_MAC)
 
 device::mojom::XRRuntimeSessionOptionsPtr GetRuntimeOptions(
     device::mojom::XRSessionOptions* options) {
@@ -400,6 +497,9 @@ void VRServiceImpl::OnImmersiveSessionCreated(
                 "VRServiceImpl::OnImmersiveSessionCreated: no session_result",
                 perfetto::Flow::Global(request.options->trace_id));
 
+#if BUILDFLAG(IS_MAC)
+    ResumeSwiftXrShellIfNeeded();
+#endif
     RejectSession(std::move(request.callback), request.options->trace_id,
                   device::mojom::RequestSessionError::UNKNOWN_RUNTIME_ERROR,
                   "Runtime did not provide a session.");
@@ -422,6 +522,9 @@ void VRServiceImpl::OnImmersiveSessionCreated(
                 "not granted",
                 perfetto::Flow::Global(request.options->trace_id));
 
+#if BUILDFLAG(IS_MAC)
+    ResumeSwiftXrShellIfNeeded();
+#endif
     RejectSession(std::move(request.callback), request.options->trace_id,
                   device::mojom::RequestSessionError::UNKNOWN_FAILURE,
                   "Required feature not granted.", &missing_required_features);
@@ -559,7 +662,7 @@ void VRServiceImpl::RequestSession(
 
   const bool has_user_activation =
       render_frame_host_->HasTransientUserActivation();
-  if (!has_user_activation) {
+  if (!has_user_activation && !options->is_ua_immersive_media) {
     // User activation is verified blink-side, so this should never fail
     // (everything that happens up to this point should not take enough time for
     // the user activation to expire). Treat lack of user activation as unknown
@@ -844,6 +947,25 @@ void VRServiceImpl::OnInstallResult(SessionRequestData request,
   DoRequestSession(std::move(request));
 }
 
+#if BUILDFLAG(IS_MAC)
+void VRServiceImpl::OnSwiftXrShellPrepared(SessionRequestData request,
+                                           bool cooperative) {
+  swiftxr_shell_cooperative_handoff_ = cooperative;
+  DoRequestSession(std::move(request));
+}
+
+void VRServiceImpl::ResumeSwiftXrShellIfNeeded() {
+  if (!swiftxr_shell_cooperative_handoff_) {
+    return;
+  }
+
+  swiftxr_shell_cooperative_handoff_ = false;
+  base::ThreadPool::PostTask(
+      FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
+      base::BindOnce(&ResumeSwiftXrShellAfterOpenXr));
+}
+#endif  // BUILDFLAG(IS_MAC)
+
 void VRServiceImpl::DoRequestSession(SessionRequestData request) {
   DVLOG(2) << __func__;
   // Get the runtime again, since we're running in an async context
@@ -855,11 +977,28 @@ void VRServiceImpl::DoRequestSession(SessionRequestData request) {
     TRACE_EVENT("xr", "VRServiceImpl::DoRequestSession: mismatching runtime",
                 perfetto::Flow::Global(request.options->trace_id));
 
+#if BUILDFLAG(IS_MAC)
+    ResumeSwiftXrShellIfNeeded();
+#endif
     RejectSession(std::move(request.callback), request.options->trace_id,
                   device::mojom::RequestSessionError::UNKNOWN_RUNTIME_ERROR,
                   "Mismatching runtime or invalid runtime.");
     return;
   }
+
+#if BUILDFLAG(IS_MAC)
+  if (device::XRSessionModeUtils::IsImmersive(request.options->mode) &&
+      !request.openxr_handoff_prepared) {
+    request.openxr_handoff_prepared = true;
+    base::ThreadPool::PostTaskAndReplyWithResult(
+        FROM_HERE,
+        {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
+        base::BindOnce(&PrepareSwiftXrShellForOpenXr),
+        base::BindOnce(&VRServiceImpl::OnSwiftXrShellPrepared,
+                       weak_ptr_factory_.GetWeakPtr(), std::move(request)));
+    return;
+  }
+#endif  // BUILDFLAG(IS_MAC)
 
   TRACE_EVENT_INSTANT("xr", "GetRuntimeForOptions", "id", request.runtime_id);
 
@@ -1013,6 +1152,10 @@ void VRServiceImpl::OnExitPresent() {
   // Ensure that the client list is erased to avoid "Cannot issue Interface
   // method calls on an unbound Remote" errors: https://crbug.com/991747
   session_clients_.Clear();
+
+#if BUILDFLAG(IS_MAC)
+  ResumeSwiftXrShellIfNeeded();
+#endif
 }
 
 void VRServiceImpl::OnVisibilityStateChanged(

@@ -152,6 +152,10 @@ struct XRSessionOptions {
 
   // ID of this request, used for tracing.
   uint64 trace_id;
+
+  // True for a Chromium-owned immersive media session rather than a WebXR
+  // request initiated by page script.
+  bool is_ua_immersive_media;
 };
 
 // WebXR logging frame that is sent periodically to measure the
