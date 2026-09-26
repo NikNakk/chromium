@@ -1219,7 +1219,7 @@ XrResult OpenXrApiWrapper::EndFrame() {
   if (IsFeatureEnabled(mojom::XRSessionFeature::SECONDARY_VIEWS)) {
     for (const auto& secondary_view_config : secondary_view_configs_) {
       const OpenXrViewConfiguration& view_config = secondary_view_config.second;
-      if (view_config.Active()) {
+      if (view_config.Active() && graphics_binding_->CanSubmitBaseLayer()) {
         layers->AddSecondaryLayerForType(
             local_space_, view_config.Type(), blend_mode_,
             graphics_binding_->GetBaseLayerProjectionViews(view_config),
