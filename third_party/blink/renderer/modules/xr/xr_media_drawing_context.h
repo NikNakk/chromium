@@ -21,7 +21,7 @@ class XRMediaDrawingContext : public XRLayerDrawingContext {
  public:
   XRMediaDrawingContext(XRSession* session,
                         HTMLVideoElement* video,
-                        bool needs_eac_reprojection);
+                        bool needs_eac_reprojection = false);
   ~XRMediaDrawingContext() override;
 
   void OnFrameStart() override;
