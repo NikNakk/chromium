@@ -1058,9 +1058,14 @@ void XRSystem::RequestImmersiveMediaSession(
 
   const media::VideoSpatialFormat spatial_format =
       video->GetWebMediaPlayer()->GetSpatialFormat();
+  const gfx::Size natural_size = video->GetWebMediaPlayer()->NaturalSize();
+  LOG(ERROR) << "XRDBG immersive-media: fullscreen video format="
+             << spatial_format.ToString() << " natural_size="
+             << natural_size.ToString();
+
   if (spatial_format.projection_type == media::VideoProjectionType::kNone) {
-    LOG(ERROR) << "XRDBG immersive-media: fullscreen video has no supported "
-                  "spatial projection metadata";
+    LOG(ERROR) << "XRDBG immersive-media: no supported spatial projection "
+                  "metadata; leaving video in normal fullscreen";
     return;
   }
 
