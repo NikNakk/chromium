@@ -554,31 +554,12 @@ void OpenXrGraphicsBindingMetal::CreateSharedImages(
              << " storageMode=" << static_cast<uint64_t>(texture.storageMode)
              << " usage=" << static_cast<uint64_t>(texture.usage);
 
-    // Generic zero-copy path. Some runtimes (including simulator-style
-    // runtimes) return an MTLTexture which is already IOSurface-backed. An
-    // IOSurface can be transferred through Chromium's ordinary GMB/SharedImage
-    // machinery without any runtime-specific IPC.
-    if (transfer_size == runtime_size) {
-      if (IOSurfaceRef runtime_surface = texture.iosurface) {
-        swap_chain_info.shared_image = sii->CreateSharedImage(
-            direct_si_info,
-            gfx::GpuMemoryBufferHandle(gfx::ScopedIOSurface(
-                runtime_surface, base::scoped_policy::RETAIN)));
-        if (swap_chain_info.shared_image) {
-          impl_->fallback_textures.erase(metal_texture);
-          swap_chain_info.sync_token = sii->GenVerifiedSyncToken();
-          DVLOG(1) << __func__
-                   << ": using direct IOSurface OpenXR texture transport";
-          continue;
-        }
-        DLOG(WARNING) << __func__
-                      << ": runtime IOSurface could not be imported as a "
-                         "SharedImage; trying other transports";
-      }
-    }
-
     // Monado zero-copy path. The helper turns the runtime-owned MTLTexture into
     // a claimable XPC token which the GPU process resolves on ANGLE's device.
+    //
+    // Do this before considering any generic IOSurface sharing. Monado's helper
+    // also supplies the runtime-specific cross-process synchronization needed
+    // for a runtime-owned texture to be written safely by Chromium.
     if (transfer_size == runtime_size && publish_texture) {
       uint64_t texture_token = 0;
       if (publish_texture(metal_texture, &texture_token) == 0 &&
@@ -589,8 +570,10 @@ void OpenXrGraphicsBindingMetal::CreateSharedImages(
         if (swap_chain_info.shared_image) {
           impl_->fallback_textures.erase(metal_texture);
           swap_chain_info.sync_token = sii->GenVerifiedSyncToken();
-          DVLOG(1) << __func__
-                   << ": using Monado Metal XPC zero-copy transport";
+          LOG(INFO) << __func__
+                    << ": transport=monado-xpc-zero-copy layer="
+                    << layer.GetLayerId()
+                    << " size=" << runtime_size.ToString();
           continue;
         }
         DLOG(WARNING) << __func__
@@ -598,6 +581,16 @@ void OpenXrGraphicsBindingMetal::CreateSharedImages(
                          "SharedImage; using IOSurface copy fallback";
       }
     }
+
+    // Do not expose an arbitrary runtime-owned IOSurface directly to ANGLE.
+    // That looked attractive as a generic zero-copy path, but ownership alone
+    // is not enough: an OpenXR runtime may have graphics-API interop state and
+    // synchronization associated with the MTLTexture object it returned.
+    // Meta XR Simulator, for example, implements Metal on top of a Vulkan
+    // compositor. Chromium writing the IOSurface from a separate process/queue
+    // can therefore race the runtime's interop even though the pixels are in
+    // shared storage. Use the explicit copy path below unless the runtime
+    // provides a synchronization-aware transport such as Monado's XPC helper.
 
     // Runtime-neutral fallback. Render into a Chromium-owned IOSurface that can
     // be shared with Blink/ANGLE, then copy it into the runtime swapchain
@@ -633,10 +626,11 @@ void OpenXrGraphicsBindingMetal::CreateSharedImages(
 
     impl_->fallback_textures[metal_texture] = fallback_texture;
     swap_chain_info.sync_token = sii->GenVerifiedSyncToken();
-    DVLOG(1) << __func__
-             << ": using runtime-neutral IOSurface Metal fallback transfer="
-             << transfer_size.ToString()
-             << " runtime=" << runtime_size.ToString();
+    LOG(INFO) << __func__
+              << ": transport=iosurface-copy layer=" << layer.GetLayerId()
+              << " transfer=" << transfer_size.ToString()
+              << " runtime=" << runtime_size.ToString()
+              << " runtime_iosurface=" << (texture.iosurface != nullptr);
   }
 }
 
