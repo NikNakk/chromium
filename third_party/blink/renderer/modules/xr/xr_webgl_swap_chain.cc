@@ -6,7 +6,6 @@
 
 #include "base/logging.h"
 #include "base/notreached.h"
-#include "build/build_config.h"
 #include "third_party/blink/renderer/modules/webgl/webgl_framebuffer.h"
 #include "third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.h"
 #include "third_party/blink/renderer/modules/webgl/webgl_texture.h"
@@ -288,23 +287,6 @@ XRWebGLSharedImageSwapChain::XRWebGLSharedImageSwapChain(
   CHECK_EQ(descriptor.layers, 1);
 }
 
-void XRWebGLSharedImageSwapChain::OnTextureQueried() {
-#if BUILDFLAG(IS_MAC)
-  // Diagnostic for the macOS OpenXR SharedImage path. The SharedImages are
-  // allocated cleared by the browser side. Re-clearing on every WebXR frame
-  // can turn a queried-but-not-repainted projection layer into an explicitly
-  // black submitted frame. Skip the repeated clear temporarily so we can
-  // distinguish that from transport/runtime corruption.
-  if (descriptor().clear_on_access) {
-    DVLOG(1) << __func__
-             << ": skipping repeated clearOnAccess for macOS SharedImage";
-  }
-  return;
-#else
-  XRWebGLSwapChain::OnTextureQueried();
-#endif
-}
-
 WebGLUnownedTexture* XRWebGLSharedImageSwapChain::ProduceTexture() {
   gpu::gles2::GLES2Interface* context_gl = context()->ContextGL();
   if (!context_gl) {
@@ -345,6 +327,17 @@ WebGLUnownedTexture* XRWebGLSharedImageSwapChain::ProduceTexture() {
 void XRWebGLSharedImageSwapChain::OnFrameEnd() {
   WebGLUnownedTexture* texture = ResetCurrentTexture();
   if (texture) {
+    // Ensure all WebGL commands which write the externally-backed texture have
+    // been submitted to ANGLE before ending SharedImage access and exporting
+    // its sync token. This matches upstream Chromium's SharedImage swapchain
+    // path. Without the flush, clearOnAccess() can reach the IOSurface while
+    // the application's later draw calls remain queued, producing intermittent
+    // transparent-black XR frames.
+    gpu::gles2::GLES2Interface* gl = context()->ContextGL();
+    if (gl) {
+      gl->Flush();
+    }
+
     DCHECK(shared_image_texture_);
     sync_token_ = gpu::SharedImageTexture::ScopedAccess::EndAccess(
         std::move(shared_image_scoped_access_));
