@@ -233,6 +233,13 @@ bool SetupSandboxParameters(sandbox::mojom::Sandbox sandbox_type,
       // No specialized setup required.
       break;
     case sandbox::mojom::Sandbox::kXrCompositing: {
+      // The macOS XR service uses Chromium's GPU sandbox policy as its base
+      // because it owns the native Metal/OpenXR graphics binding. Populate the
+      // GPU policy parameters before adding the XR-specific runtime allowance.
+      if (!SetupGpuSandboxParameters(serializer, command_line)) {
+        return false;
+      }
+
       // XR_RUNTIME_JSON is consumed by the OpenXR loader inside the isolated
       // XR service, after Seatbelt has been entered. Pass only the selected
       // manifest's parent directory into the XR-specific profile so a
