@@ -13,6 +13,14 @@
 #include "base/trace_event/typed_macros.h"
 #include "build/build_config.h"
 #include "device/vr/public/mojom/vr_service.mojom-blink.h"
+#include "media/base/video_spatial_format.h"
+#include "third_party/blink/renderer/bindings/modules/v8/v8_xr_equirect_layer_init.h"
+#include "third_party/blink/renderer/bindings/modules/v8/v8_xr_layer_layout.h"
+#include "third_party/blink/renderer/core/html/media/html_video_element.h"
+#include "third_party/blink/renderer/modules/xr/xr_equirect_layer.h"
+#include "third_party/blink/renderer/modules/xr/xr_media_drawing_context.h"
+#include "third_party/blink/renderer/modules/xr/xr_reference_space.h"
+#include "third_party/blink/renderer/platform/wtf/math_extras.h"
 #include "services/metrics/public/cpp/ukm_builders.h"
 #include "services/network/public/mojom/permissions_policy/permissions_policy_feature.mojom-blink.h"
 #include "third_party/blink/public/common/features.h"
@@ -1042,6 +1050,172 @@ void XRSystem::RequestSessionInternal(
   }
 }
 
+void XRSystem::RequestImmersiveMediaSession(
+    HTMLVideoElement* video) {
+  if (!video || !video->GetWebMediaPlayer()) {
+    return;
+  }
+
+  const media::VideoSpatialFormat spatial_format =
+      video->GetWebMediaPlayer()->GetSpatialFormat();
+  if (spatial_format.projection_type == media::VideoProjectionType::kNone) {
+    LOG(ERROR) << "XRDBG immersive-media: fullscreen video has no supported "
+                  "spatial projection metadata";
+    return;
+  }
+
+  if (immersive_media_request_pending_ || immersive_media_session_ ||
+      has_outstanding_immersive_request_ ||
+      frameProvider()->immersive_session()) {
+    LOG(ERROR) << "XRDBG immersive-media: immersive XR session already active "
+                  "or pending";
+    return;
+  }
+
+  TryEnsureService();
+  if (!service_.is_bound()) {
+    LOG(ERROR) << "XRDBG immersive-media: VRService unavailable";
+    return;
+  }
+
+  DisableBackForwardCache();
+  immersive_media_video_ = video;
+  immersive_media_request_pending_ = true;
+  has_outstanding_immersive_request_ = true;
+
+  auto options = device::mojom::blink::XRSessionOptions::New();
+  options->mode = device::mojom::blink::XRSessionMode::kImmersiveVr;
+  for (auto feature : kDefaultImmersiveVrFeatures) {
+    options->required_features.push_back(feature);
+  }
+  options->trace_id = base::trace_event::GetNextGlobalTraceId();
+
+  LOG(ERROR) << "XRDBG immersive-media: requesting internal immersive-vr "
+             << spatial_format.ToString();
+
+  service_->RequestSession(
+      std::move(options),
+      BindOnce(&XRSystem::OnImmersiveMediaSessionReturned,
+               WrapWeakPersistent(this), WrapPersistent(video)));
+}
+
+void XRSystem::EndImmersiveMediaSession(HTMLVideoElement* video) {
+  if (video && immersive_media_video_.Get() &&
+      immersive_media_video_.Get() != video) {
+    return;
+  }
+
+  immersive_media_video_ = nullptr;
+
+  if (!immersive_media_session_) {
+    // A request may still be in flight. Its completion callback will see that
+    // the source video has gone away and immediately close the new session.
+    return;
+  }
+
+  XRSession* session = immersive_media_session_.Get();
+  immersive_media_layer_ = nullptr;
+  immersive_media_space_ = nullptr;
+  immersive_media_session_ = nullptr;
+
+  LOG(ERROR) << "XRDBG immersive-media: ending internal immersive session";
+  session->ForceEnd(XRSession::ShutdownPolicy::kWaitForResponse);
+}
+
+void XRSystem::OnImmersiveMediaSessionReturned(
+    HTMLVideoElement* video,
+    device::mojom::blink::RequestSessionResultPtr result) {
+  immersive_media_request_pending_ = false;
+  has_outstanding_immersive_request_ = false;
+
+  if (!result->is_success()) {
+    LOG(ERROR) << "XRDBG immersive-media: session creation failed: "
+               << GetConsoleMessage(result->get_failure_reason());
+    immersive_media_video_ = nullptr;
+    return;
+  }
+
+  auto session_ptr = std::move(result->get_success()->session);
+
+  XRSessionFeatureSet enabled_features;
+  for (const auto& feature : session_ptr->enabled_features) {
+    enabled_features.insert(feature);
+  }
+
+  XRSession* session = CreateSession(
+      device::mojom::blink::XRSessionMode::kImmersiveVr,
+      session_ptr->enviroment_blend_mode, session_ptr->interaction_mode,
+      std::move(session_ptr->client_receiver),
+      std::move(session_ptr->device_config), std::move(enabled_features),
+      result->get_success()->trace_id);
+  frameProvider()->OnSessionStarted(session, std::move(session_ptr));
+
+  if (result->get_success()->xr_internals_listener) {
+    webxr_internals_renderer_listener_.Bind(
+        std::move(result->get_success()->xr_internals_listener),
+        GetExecutionContext()->GetTaskRunner(TaskType::kInternalDefault));
+  }
+
+  if (!immersive_media_video_ || immersive_media_video_.Get() != video ||
+      !video->GetWebMediaPlayer()) {
+    LOG(ERROR) << "XRDBG immersive-media: source video left fullscreen before "
+                  "the XR session became ready";
+    session->ForceEnd(XRSession::ShutdownPolicy::kWaitForResponse);
+    return;
+  }
+
+  const media::VideoSpatialFormat spatial_format =
+      video->GetWebMediaPlayer()->GetSpatialFormat();
+  if (spatial_format.projection_type == media::VideoProjectionType::kNone) {
+    session->ForceEnd(XRSession::ShutdownPolicy::kWaitForResponse);
+    immersive_media_video_ = nullptr;
+    return;
+  }
+
+  auto* space = MakeGarbageCollected<XRReferenceSpace>(
+      session, device::mojom::blink::XRReferenceSpaceType::kLocal);
+  auto* drawing_context =
+      MakeGarbageCollected<XRMediaDrawingContext>(session, video);
+
+  auto* init = XREquirectLayerInit::Create();
+  init->setSpace(space);
+  init->setViewPixelWidth(drawing_context->TextureWidth());
+  init->setViewPixelHeight(drawing_context->TextureHeight());
+
+  if (spatial_format.projection_type ==
+      media::VideoProjectionType::kEquirect180) {
+    init->setCentralHorizontalAngle(kPiFloat);
+  }
+
+  V8XRLayerLayout::Enum layout = V8XRLayerLayout::Enum::kMono;
+  switch (spatial_format.stereo_mode) {
+    case media::VideoStereoMode::kMono:
+      layout = V8XRLayerLayout::Enum::kMono;
+      break;
+    case media::VideoStereoMode::kSideBySideLeftFirst:
+      layout = V8XRLayerLayout::Enum::kStereoLeftRight;
+      break;
+    case media::VideoStereoMode::kTopBottomLeftFirst:
+      layout = V8XRLayerLayout::Enum::kStereoTopBottom;
+      break;
+  }
+
+  auto* layer = MakeGarbageCollected<XREquirectLayer>(
+      session, init, layout, /*binding=*/nullptr, drawing_context);
+
+  immersive_media_session_ = session;
+  immersive_media_space_ = space;
+  immersive_media_layer_ = layer;
+
+  session->SetInternalCompositionLayer(layer);
+  session->DispatchInitialEvents();
+
+  LOG(ERROR) << "XRDBG immersive-media: native XR media layer active "
+             << spatial_format.ToString() << " texture="
+             << drawing_context->TextureWidth() << "x"
+             << drawing_context->TextureHeight();
+}
+
 void XRSystem::RequestImmersiveSession(PendingRequestSessionQuery* query,
                                        ExceptionState* exception_state) {
   DVLOG(2) << __func__;
@@ -1454,6 +1628,13 @@ void XRSystem::MakeXrCompatibleSync(
 }
 
 void XRSystem::OnSessionEnded(XRSession* session) {
+  if (session == immersive_media_session_) {
+    immersive_media_layer_ = nullptr;
+    immersive_media_space_ = nullptr;
+    immersive_media_session_ = nullptr;
+    immersive_media_video_ = nullptr;
+  }
+
   if (session->immersive()) {
     webxr_internals_renderer_listener_.reset();
   }
@@ -1817,6 +1998,10 @@ void XRSystem::DisableBackForwardCache() {
 void XRSystem::Trace(Visitor* visitor) const {
   visitor->Trace(frame_provider_);
   visitor->Trace(sessions_);
+  visitor->Trace(immersive_media_video_);
+  visitor->Trace(immersive_media_session_);
+  visitor->Trace(immersive_media_space_);
+  visitor->Trace(immersive_media_layer_);
   visitor->Trace(service_);
   visitor->Trace(environment_provider_);
   visitor->Trace(receiver_);

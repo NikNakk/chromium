@@ -9,6 +9,7 @@
 
 #include "base/functional/callback_helpers.h"
 #include "base/task/single_thread_task_runner.h"
+#include "build/build_config.h"
 #include "media/mojo/mojom/media_player.mojom-blink.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
 #include "services/network/public/mojom/permissions_policy/permissions_policy_feature.mojom-blink.h"
@@ -32,6 +33,9 @@
 #include "third_party/blink/renderer/modules/document_picture_in_picture/document_picture_in_picture.h"
 #include "third_party/blink/renderer/modules/document_picture_in_picture/document_picture_in_picture_event.h"
 #include "third_party/blink/renderer/modules/picture_in_picture/picture_in_picture_event.h"
+#if BUILDFLAG(IS_MAC)
+#include "third_party/blink/renderer/modules/xr/xr_system.h"
+#endif  // BUILDFLAG(IS_MAC)
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/weborigin/scheme_registry.h"
@@ -144,8 +148,26 @@ void PictureInPictureControllerImpl::EnterPictureInPicture(
 
 void PictureInPictureControllerImpl::EnterPictureInPictureImmersive(
     HTMLVideoElement& video_element) {
+#if BUILDFLAG(IS_MAC)
+  // macOS has no SceneCore-style immersive video surface. Reuse Chromium's
+  // existing WebXR/OpenXR path so the decoded HTMLVideoElement remains the
+  // media source and the XR backend remains runtime-agnostic.
+  if (XRSystem* xr = XRSystem::From(video_element.GetDocument())) {
+    xr->RequestImmersiveMediaSession(&video_element);
+  }
+#else
   EnterPictureInPictureInternal(&video_element, /*request_immersive=*/true,
                                 /*resolver=*/nullptr);
+#endif  // BUILDFLAG(IS_MAC)
+}
+
+void PictureInPictureControllerImpl::ExitPictureInPictureImmersive(
+    HTMLVideoElement& video_element) {
+#if BUILDFLAG(IS_MAC)
+  if (XRSystem* xr = XRSystem::FromIfExists(video_element.GetDocument())) {
+    xr->EndImmersiveMediaSession(&video_element);
+  }
+#endif  // BUILDFLAG(IS_MAC)
 }
 
 void PictureInPictureControllerImpl::EnterPictureInPictureInternal(

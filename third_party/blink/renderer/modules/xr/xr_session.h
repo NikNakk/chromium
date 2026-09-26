@@ -61,6 +61,7 @@ class XRDOMOverlayState;
 class XRHitTestOptionsInit;
 class XRHitTestSource;
 class XRImageTrackingResult;
+class XRLayer;
 class XRLightProbe;
 class XRMeshSet;
 class XRMeshManager;
@@ -448,6 +449,11 @@ class XRSession final : public EventTarget,
 
   device::mojom::blink::XRLayerManager* LayerManager();
 
+  // Installs and continuously drives a single UA-owned composition layer.
+  // Used by browser-native immersive media playback, where there is no page
+  // requestAnimationFrame callback to keep the XR frame loop alive.
+  void SetInternalCompositionLayer(XRLayer* layer);
+
   // This is an opportunity for the session to dispatch any initial set of
   // events. Called by |XrSystem| after the session query has resolved.
   void DispatchInitialEvents();
@@ -464,6 +470,7 @@ class XRSession final : public EventTarget,
   void ApplyPendingRenderState();
 
   void MaybeRequestFrame();
+  void PumpInternalCompositionLayerFrame(double timestamp);
 
   void OnInputStateChangeInternal(
       int16_t frame_id,
@@ -568,6 +575,7 @@ class XRSession final : public EventTarget,
   // "ended_" becomes true as soon as session shutdown is initiated.
   bool ended_ = false;
   bool waiting_for_shutdown_ = false;
+  bool internal_composition_layer_frame_pump_ = false;
 
   XRSessionFeatureSet enabled_feature_set_;
   Member<FrozenArray<IDLString>> enabled_features_;

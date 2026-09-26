@@ -36,9 +36,12 @@
 
 namespace blink {
 
+class HTMLVideoElement;
 class Navigator;
 class V8XRSessionMode;
+class XREquirectLayer;
 class XRFrameProvider;
+class XRReferenceSpace;
 class XRSession;
 class XRSessionInit;
 
@@ -97,6 +100,12 @@ class XRSystem final : public EventTarget,
                                           const V8XRSessionMode&,
                                           XRSessionInit*,
                                           ExceptionState& exception_state);
+
+  // Browser-native immersive video playback. These methods intentionally
+  // bypass the page WebXR API while reusing the same XR session, media-layer,
+  // and OpenXR transport implementation.
+  void RequestImmersiveMediaSession(HTMLVideoElement* video);
+  void EndImmersiveMediaSession(HTMLVideoElement* video);
 
   XRFrameProvider* frameProvider();
 
@@ -420,6 +429,10 @@ class XRSystem final : public EventTarget,
       device::mojom::blink::RequestSessionResultPtr result);
   void RejectSessionRequest(PendingRequestSessionQuery*);
 
+  void OnImmersiveMediaSessionReturned(
+      HTMLVideoElement* video,
+      device::mojom::blink::RequestSessionResultPtr result);
+
   void EnsureDevice();
 
   void AddedEventListener(const AtomicString& event_type,
@@ -470,6 +483,15 @@ class XRSystem final : public EventTarget,
 
   Member<XRFrameProvider> frame_provider_;
   HeapHashSet<WeakMember<XRSession>> sessions_;
+
+  // UA-owned immersive media state. Strong references are required because
+  // this session/layer is not exposed to JavaScript.
+  Member<HTMLVideoElement> immersive_media_video_;
+  Member<XRSession> immersive_media_session_;
+  Member<XRReferenceSpace> immersive_media_space_;
+  Member<XREquirectLayer> immersive_media_layer_;
+  bool immersive_media_request_pending_ = false;
+
   HeapMojoRemote<device::mojom::blink::VRService> service_;
   HeapMojoAssociatedRemote<
       device::mojom::blink::XREnvironmentIntegrationProvider>

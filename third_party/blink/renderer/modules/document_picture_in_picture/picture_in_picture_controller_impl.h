@@ -74,6 +74,7 @@ class MODULES_EXPORT PictureInPictureControllerImpl
   void ExitPictureInPicture(HTMLVideoElement*,
                             ScriptPromiseResolver<IDLUndefined>*) override;
   void EnterPictureInPictureImmersive(HTMLVideoElement& video_element) override;
+  void ExitPictureInPictureImmersive(HTMLVideoElement& video_element) override;
   bool IsPictureInPictureElement(const Element*) const override;
   void OnPictureInPictureStateChange() override;
   void OnMediaPositionStateChanged(

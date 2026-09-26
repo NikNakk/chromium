@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cmath>
 #include <ranges>
+#include <utility>
 
 #include "third_party/blink/renderer/bindings/modules/v8/v8_xr_render_state_init.h"
 #include "third_party/blink/renderer/modules/xr/xr_composition_layer.h"
@@ -125,6 +126,14 @@ bool XRRenderState::HasLayer(XRLayer* layer) const {
     return std::ranges::contains(*layers_, layer);
   }
   return false;
+}
+
+void XRRenderState::SetLayersForInternal(
+    HeapVector<Member<XRLayer>> layers) {
+  base_layer_ = nullptr;
+  UpdateLayersState(
+      MakeGarbageCollected<FrozenArray<XRLayer>>(std::move(layers)));
+  needs_layers_update_ = true;
 }
 
 void XRRenderState::OnFrameStart() {

@@ -76,6 +76,10 @@ class XRRenderState : public ScriptWrappable {
   // Returns true if the layer is included in the current render state.
   bool HasLayer(XRLayer*) const;
 
+  // Installs a layer sequence for UA-owned immersive media playback without
+  // exposing a synthetic WebXR API call to page script.
+  void SetLayersForInternal(HeapVector<Member<XRLayer>> layers);
+
   // Gets the transport delegate from the baseLayer, or from the last layer in
   // the layers list if baseLayer is null.
   XRFrameTransportDelegate* GetTransportDelegate();

@@ -30,6 +30,7 @@
 #include "base/feature_list.h"
 #include "base/functional/callback_helpers.h"
 #include "base/metrics/histogram_functions.h"
+#include "build/build_config.h"
 #include "cc/layers/layer.h"
 #include "cc/paint/paint_canvas.h"
 #include "media/base/cdm_config.h"
@@ -1187,6 +1188,15 @@ void HTMLVideoElement::SetIsEffectivelyFullscreen(
   if (is_effectively_fullscreen_ && !was_effectively_fullscreen) {
     MaybeEnterImmersivePictureInPicture();
   }
+
+#if BUILDFLAG(IS_MAC)
+  if (!is_effectively_fullscreen_ && was_effectively_fullscreen &&
+      GetDocument().GetSettings() &&
+      GetDocument().GetSettings()->GetImmersiveVideoPlaybackEnabled()) {
+    PictureInPictureController::From(GetDocument())
+        .ExitPictureInPictureImmersive(*this);
+  }
+#endif  // BUILDFLAG(IS_MAC)
 }
 
 void HTMLVideoElement::MaybeEnterImmersivePictureInPicture() {

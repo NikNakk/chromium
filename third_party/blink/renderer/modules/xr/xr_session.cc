@@ -2773,6 +2773,36 @@ device::mojom::blink::XRLayerManager* XRSession::LayerManager() {
   return xr()->frameProvider()->layer_manager();
 }
 
+void XRSession::SetInternalCompositionLayer(XRLayer* layer) {
+  if (ended_ || !immersive() || !layer) {
+    return;
+  }
+
+  HeapVector<Member<XRLayer>> layers;
+  layers.push_back(layer);
+  render_state_->SetLayersForInternal(std::move(layers));
+  should_update_layers_backend_ = true;
+
+  if (!internal_composition_layer_frame_pump_) {
+    internal_composition_layer_frame_pump_ = true;
+    ScheduleVideoFrameCallbacksExecution(
+        BindOnce(&XRSession::PumpInternalCompositionLayerFrame,
+                 WrapWeakPersistent(this)));
+  }
+}
+
+void XRSession::PumpInternalCompositionLayerFrame(double timestamp) {
+  if (ended_ || !internal_composition_layer_frame_pump_) {
+    return;
+  }
+
+  // Re-queue a callback solely to keep the immersive frame loop alive. The
+  // media layer itself pulls the newest decoded VideoFrame in OnFrameStart().
+  ScheduleVideoFrameCallbacksExecution(
+      BindOnce(&XRSession::PumpInternalCompositionLayerFrame,
+               WrapWeakPersistent(this)));
+}
+
 void XRSession::OnTransferComplete(const Vector<device::LayerId>& layer_ids) {
   if (render_state_) {
     render_state_->OnTransferComplete(layer_ids);
