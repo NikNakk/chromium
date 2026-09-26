@@ -4,6 +4,7 @@
 
 #include "third_party/blink/renderer/modules/xr/xr_webgl_swap_chain.h"
 
+#include "base/logging.h"
 #include "base/notreached.h"
 #include "third_party/blink/renderer/modules/webgl/webgl_framebuffer.h"
 #include "third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.h"
@@ -299,6 +300,17 @@ WebGLUnownedTexture* XRWebGLSharedImageSwapChain::ProduceTexture() {
   }
 
   CHECK(content_image_data.sync_token.HasData());
+
+  const gfx::Size shared_size = content_image_data.shared_image->size();
+  const gfx::Size descriptor_size(descriptor().width, descriptor().height);
+  if (shared_size != descriptor_size) {
+    LOG(ERROR) << "WebXR SharedImage size mismatch: layer="
+               << layer()->layer_id() << " descriptor="
+               << descriptor_size.ToString() << " shared_image="
+               << shared_size.ToString() << " texture_array="
+               << descriptor().is_texture_array << " layers="
+               << descriptor().layers;
+  }
 
   // Create a texture backed by the shared image.
   CHECK(!shared_image_texture_);
