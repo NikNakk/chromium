@@ -12,7 +12,25 @@ namespace blink {
 void XRRasterFrameTransportDelegate::WaitOnFence(gfx::GpuFence* fence) {}
 
 void XRRasterFrameTransportDelegate::VerifySyncToken(
-    gpu::SyncToken& sync_token) {}
+    gpu::SyncToken& sync_token) {
+  if (!sync_token.HasData() || sync_token.verified_flush()) {
+    return;
+  }
+
+  auto wrapper = SharedGpuContext::ContextProviderWrapper();
+  if (!wrapper) {
+    return;
+  }
+
+  gpu::raster::RasterInterface* raster_interface =
+      wrapper->ContextProvider().RasterInterface();
+  if (!raster_interface) {
+    return;
+  }
+
+  int8_t* sync_token_data = sync_token.GetData();
+  raster_interface->VerifySyncTokensCHROMIUM(&sync_token_data, 1);
+}
 
 std::pair<gfx::GpuMemoryBufferHandle, gpu::SyncToken>
 XRRasterFrameTransportDelegate::CopyImage(SharedImageHolder* image,

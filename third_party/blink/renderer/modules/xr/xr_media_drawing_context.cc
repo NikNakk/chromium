@@ -142,9 +142,9 @@ void XRMediaDrawingContext::OnFrameStart() {
             dest_shared_image.shared_image->mailbox(), 0, 0, 0, 0, width_,
             height_);
 
-        gpu::RasterScopedAccess::EndAccess(std::move(dst_raster_access));
         sync_token_ =
-            gpu::RasterScopedAccess::EndAccess(std::move(src_raster_access));
+            gpu::RasterScopedAccess::EndAccess(std::move(dst_raster_access));
+        gpu::RasterScopedAccess::EndAccess(std::move(src_raster_access));
       } else {
         LOG(ERROR) << "OnFrameStart: failed to get shared image from "
                       "StaticBitmapImage";
