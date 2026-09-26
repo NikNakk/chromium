@@ -148,6 +148,21 @@ class OpenXrCompositionLayer {
   }
   bool is_rendered() const { return is_rendered_; }
   bool needs_redraw() const { return needs_redraw_; }
+
+  // Whether this swapchain has an image that can legally be referenced by
+  // xrEndFrame. The runtime uses the most recently released image.
+  bool has_last_released_swapchain_image() const {
+    return has_last_released_swapchain_image_;
+  }
+
+  // A sparse frame may reacquire the same image that was most recently
+  // released and then leave it untouched. In that case re-releasing it
+  // preserves the previous pixels while restoring a valid xrEndFrame image.
+  bool active_swapchain_image_is_last_released() const {
+    return swapchain_image_state_ == SwapchainImageState::kWaited &&
+           has_last_released_swapchain_image_ &&
+           active_swapchain_index_ == last_released_swapchain_index_;
+  }
   const mojom::XRLayerReadOnlyData& read_only_data() const {
     DCHECK(creation_data_);
     return *creation_data_->read_only_data;
@@ -184,6 +199,11 @@ class OpenXrCompositionLayer {
 
   // True if an active swapchain image was rendered in the frame request cycle.
   bool is_rendered_ = false;
+
+  // The image index most recently released to the OpenXR runtime. This remains
+  // usable for frame submission while another, different image is acquired.
+  bool has_last_released_swapchain_image_ = false;
+  uint32_t last_released_swapchain_index_ = 0;
 
   // The swapchain is initializd when a session begins and is re-created when
   // the state of a secondary view configuration changes.
