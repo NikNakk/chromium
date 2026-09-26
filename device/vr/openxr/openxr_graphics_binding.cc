@@ -753,11 +753,13 @@ void OpenXrGraphicsBinding::SetEnabledCompositionLayers(
           if (layer->HasColorSwapchain()) {
             layer->DestroySwapchain(sii);
           }
+          last_rendered_layer_projection_views_.erase(id);
           layer->SetSwapchainImageSize(layer_size);
         }
       }
 #endif
       if (!layer->HasColorSwapchain()) {
+        last_rendered_layer_projection_views_.erase(id);
         uint32_t layer_sample_count = swapchain_sample_count;
 #if BUILDFLAG(IS_MAC)
         // The direct Metal SharedImage import path only supports
@@ -777,6 +779,7 @@ void OpenXrGraphicsBinding::SetEnabledCompositionLayers(
       }
     } else if (layer->HasColorSwapchain()) {
       layer->DestroySwapchain(sii);
+      last_rendered_layer_projection_views_.erase(id);
     }
   }
   layers_sequence_ = layer_ids;
