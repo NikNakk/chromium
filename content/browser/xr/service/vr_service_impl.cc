@@ -11,6 +11,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/containers/span.h"
 #include "base/containers/to_vector.h"
 #include "base/dcheck_is_on.h"
 #include "base/feature_list.h"
@@ -101,9 +102,11 @@ std::string SendSwiftXrShellHandoffCommand(std::string_view command) {
       "Connection: close\r\n\r\n");
 
   size_t offset = 0;
-  while (offset < request.size()) {
+  const base::span<const char> request_span(request);
+  while (offset < request_span.size()) {
+    const base::span<const char> remaining = request_span.subspan(offset);
     const ssize_t written =
-        send(fd, request.data() + offset, request.size() - offset, 0);
+        send(fd, remaining.data(), remaining.size(), 0);
     if (written <= 0) {
       close(fd);
       return {};
