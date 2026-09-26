@@ -90,6 +90,12 @@ void OpenXrGraphicsBinding::OnSessionDestroyed(gpu::SharedImageInterface* sii) {
   layers_.clear();
 }
 
+bool OpenXrGraphicsBinding::CanSubmitBaseLayer() const {
+  return base_layer_ &&
+         (base_layer_->is_rendered() ||
+          base_layer_->has_last_released_swapchain_image());
+}
+
 std::vector<XrCompositionLayerProjectionView>
 OpenXrGraphicsBinding::GetBaseLayerProjectionViews(
     const OpenXrViewConfiguration& view_config) const {
@@ -246,7 +252,7 @@ std::unique_ptr<OpenXrLayers> OpenXrGraphicsBinding::GetLayersForViewConfig(
                                          GetFlipLayerLayout(layer));
     }
   }
-  if (ShouldRenderBaseLayer()) {
+  if (ShouldRenderBaseLayer() && CanSubmitBaseLayer()) {
     openxr_layers->AddBaseLayer(
         openxr->GetReferenceSpace(mojom::XRReferenceSpaceType::kLocal),
         GetBaseLayerProjectionViews(view_config), GetFlipLayerLayout());
@@ -422,6 +428,15 @@ XrResult OpenXrGraphicsBinding::ReleaseActiveSwapchainImages() {
   // than releasing an untouched image. xrEndFrame can continue presenting the
   // swapchain's previously released image in the meantime.
   if (!base_layer_->is_rendered()) {
+    // xrEndFrame references the most recently released image. Usually we can
+    // leave an untouched newly-acquired image held while continuing to submit
+    // that previous image. If the runtime handed us the *same* image index as
+    // the last release, however, that image is application-owned again and no
+    // released image remains. Re-release it unchanged: its pixels are still
+    // exactly the previously presented content.
+    if (base_layer_->active_swapchain_image_is_last_released()) {
+      return base_layer_->ReleaseActiveSwapchainImage();
+    }
     return XR_SUCCESS;
   }
   return base_layer_->ReleaseActiveSwapchainImage();
