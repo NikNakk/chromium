@@ -6,6 +6,7 @@
 
 #include "base/logging.h"
 #include "base/notreached.h"
+#include "build/build_config.h"
 #include "third_party/blink/renderer/modules/webgl/webgl_framebuffer.h"
 #include "third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.h"
 #include "third_party/blink/renderer/modules/webgl/webgl_texture.h"
@@ -285,6 +286,23 @@ XRWebGLSharedImageSwapChain::XRWebGLSharedImageSwapChain(
     : XRWebGLSwapChain(context, descriptor, webgl2) {
   // SharedImages cannot have multiple layers yet.
   CHECK_EQ(descriptor.layers, 1);
+}
+
+void XRWebGLSharedImageSwapChain::OnTextureQueried() {
+#if BUILDFLAG(IS_MAC)
+  // Diagnostic for the macOS OpenXR SharedImage path. The SharedImages are
+  // allocated cleared by the browser side. Re-clearing on every WebXR frame
+  // can turn a queried-but-not-repainted projection layer into an explicitly
+  // black submitted frame. Skip the repeated clear temporarily so we can
+  // distinguish that from transport/runtime corruption.
+  if (descriptor().clear_on_access) {
+    DVLOG(1) << __func__
+             << ": skipping repeated clearOnAccess for macOS SharedImage";
+  }
+  return;
+#else
+  XRWebGLSwapChain::OnTextureQueried();
+#endif
 }
 
 WebGLUnownedTexture* XRWebGLSharedImageSwapChain::ProduceTexture() {
