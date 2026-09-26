@@ -399,7 +399,12 @@ void OpenXrRenderLoop::StartRuntimeFinish(
 
   auto session = device::mojom::XRSession::New();
   session->data_provider = frame_data_receiver_.BindNewPipeAndPassRemote();
-  if (openxr_->IsFeatureEnabled(mojom::XRSessionFeature::LAYERS)) {
+  // Blink permits a single XRProjectionLayer/XRCompositionLayer without the
+  // optional "layers" session feature. The feature only gates *multiple*
+  // simultaneous layers. Expose XRLayerManager whenever this graphics binding
+  // supports composition layers so that the single-layer API does not silently
+  // fall back to the base projection SharedImage.
+  if (graphics_binding_->SupportsLayers()) {
     session->layer_manager = layer_manager_receiver_.BindNewPipeAndPassRemote();
   }
   session->submit_frame_sink = std::move(submit_frame_sink);
