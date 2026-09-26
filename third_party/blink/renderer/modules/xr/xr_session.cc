@@ -2299,7 +2299,8 @@ void XRSession::OnFrame(double timestamp,
       // If a feature-less single composition layer was just removed, disable
       // it on the backend before returning to the legacy base-layer path.
       if (!layers_enabled_ && LayerManager()) {
-        LayerManager()->SetEnabledCompositionLayers({});
+        blink::Vector<device::LayerId> no_layers;
+        LayerManager()->SetEnabledCompositionLayers(std::move(no_layers));
         render_state_->OnLayersUpdated();
       }
     }
