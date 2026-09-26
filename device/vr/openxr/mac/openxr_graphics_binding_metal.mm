@@ -112,6 +112,108 @@ class OpenXrGraphicsBindingMetal::Impl {
   // Objective-C object pointers stored in C++ containers are strong under ARC;
   // libc++ invokes the ARC copy/destroy semantics as map entries move and die.
   std::map<void*, id<MTLTexture>> fallback_textures;
+
+  id<MTLRenderPipelineState> ScalePipeline(MTLPixelFormat pixel_format) {
+    auto existing = scale_pipelines.find(static_cast<uint64_t>(pixel_format));
+    if (existing != scale_pipelines.end()) {
+      return existing->second;
+    }
+
+    if (scale_library == nil) {
+      static NSString* const kScaleShader = @R"metal(
+#include <metal_stdlib>
+using namespace metal;
+
+struct ScaleVertexOut {
+  float4 position [[position]];
+  float2 texcoord;
+};
+
+vertex ScaleVertexOut xr_scale_vertex(uint vertex_id [[vertex_id]]) {
+  constexpr float2 positions[3] = {
+      float2(-1.0, -1.0),
+      float2( 3.0, -1.0),
+      float2(-1.0,  3.0),
+  };
+  constexpr float2 texcoords[3] = {
+      float2(0.0, 1.0),
+      float2(2.0, 1.0),
+      float2(0.0, -1.0),
+  };
+
+  ScaleVertexOut out;
+  out.position = float4(positions[vertex_id], 0.0, 1.0);
+  out.texcoord = texcoords[vertex_id];
+  return out;
+}
+
+fragment float4 xr_scale_fragment(
+    ScaleVertexOut in [[stage_in]],
+    texture2d<float> source [[texture(0)]],
+    sampler source_sampler [[sampler(0)]]) {
+  return source.sample(source_sampler, in.texcoord);
+}
+)metal";
+
+      NSError* error = nil;
+      scale_library = [device newLibraryWithSource:kScaleShader
+                                           options:nil
+                                             error:&error];
+      if (scale_library == nil) {
+        DLOG(ERROR) << "Failed to compile OpenXR Metal scale shader: "
+                    << (error ? error.localizedDescription.UTF8String
+                              : "unknown error");
+        return nil;
+      }
+
+      scale_vertex = [scale_library newFunctionWithName:@"xr_scale_vertex"];
+      scale_fragment = [scale_library newFunctionWithName:@"xr_scale_fragment"];
+      if (scale_vertex == nil || scale_fragment == nil) {
+        DLOG(ERROR) << "OpenXR Metal scale shader functions are unavailable";
+        return nil;
+      }
+
+      MTLSamplerDescriptor* sampler_descriptor =
+          [[MTLSamplerDescriptor alloc] init];
+      sampler_descriptor.minFilter = MTLSamplerMinMagFilterLinear;
+      sampler_descriptor.magFilter = MTLSamplerMinMagFilterLinear;
+      sampler_descriptor.sAddressMode = MTLSamplerAddressModeClampToEdge;
+      sampler_descriptor.tAddressMode = MTLSamplerAddressModeClampToEdge;
+      scale_sampler = [device newSamplerStateWithDescriptor:sampler_descriptor];
+      if (scale_sampler == nil) {
+        DLOG(ERROR) << "Failed to create OpenXR Metal scale sampler";
+        return nil;
+      }
+    }
+
+    MTLRenderPipelineDescriptor* descriptor =
+        [[MTLRenderPipelineDescriptor alloc] init];
+    descriptor.vertexFunction = scale_vertex;
+    descriptor.fragmentFunction = scale_fragment;
+    descriptor.colorAttachments[0].pixelFormat = pixel_format;
+
+    NSError* error = nil;
+    id<MTLRenderPipelineState> pipeline =
+        [device newRenderPipelineStateWithDescriptor:descriptor error:&error];
+    if (pipeline == nil) {
+      DLOG(ERROR) << "Failed to create OpenXR Metal scale pipeline: "
+                  << (error ? error.localizedDescription.UTF8String
+                            : "unknown error");
+      return nil;
+    }
+
+    scale_pipelines.emplace(static_cast<uint64_t>(pixel_format), pipeline);
+    return pipeline;
+  }
+
+  id<MTLSamplerState> ScaleSampler() const { return scale_sampler; }
+
+ private:
+  id<MTLLibrary> __strong scale_library = nil;
+  id<MTLFunction> __strong scale_vertex = nil;
+  id<MTLFunction> __strong scale_fragment = nil;
+  id<MTLSamplerState> __strong scale_sampler = nil;
+  std::map<uint64_t, id<MTLRenderPipelineState>> scale_pipelines;
 };
 
 OpenXrGraphicsBindingMetal::OpenXrGraphicsBindingMetal(
@@ -285,8 +387,6 @@ bool OpenXrGraphicsBindingMetal::RenderLayer(
   id<MTLTexture> runtime_texture =
       (__bridge id<MTLTexture>)swap_chain_info->metal_texture.get();
   if (!source_texture || !runtime_texture ||
-      source_texture.width != runtime_texture.width ||
-      source_texture.height != runtime_texture.height ||
       source_texture.pixelFormat != runtime_texture.pixelFormat) {
     DLOG(ERROR) << __func__
                 << ": fallback and runtime Metal textures are incompatible";
@@ -294,23 +394,65 @@ bool OpenXrGraphicsBindingMetal::RenderLayer(
   }
 
   id<MTLCommandBuffer> command_buffer = [impl_->command_queue commandBuffer];
-  id<MTLBlitCommandEncoder> blit = [command_buffer blitCommandEncoder];
-  if (!command_buffer || !blit) {
-    DLOG(ERROR) << __func__ << ": failed to create Metal blit command";
+  if (!command_buffer) {
+    DLOG(ERROR) << __func__ << ": failed to create Metal command buffer";
     return false;
   }
 
-  [blit copyFromTexture:source_texture
-            sourceSlice:0
-            sourceLevel:0
-           sourceOrigin:MTLOriginMake(0, 0, 0)
-             sourceSize:MTLSizeMake(source_texture.width,
-                                    source_texture.height, 1)
-              toTexture:runtime_texture
-       destinationSlice:0
-       destinationLevel:0
-      destinationOrigin:MTLOriginMake(0, 0, 0)];
-  [blit endEncoding];
+  if (source_texture.width == runtime_texture.width &&
+      source_texture.height == runtime_texture.height) {
+    id<MTLBlitCommandEncoder> blit = [command_buffer blitCommandEncoder];
+    if (!blit) {
+      DLOG(ERROR) << __func__ << ": failed to create Metal blit command";
+      return false;
+    }
+
+    [blit copyFromTexture:source_texture
+              sourceSlice:0
+              sourceLevel:0
+             sourceOrigin:MTLOriginMake(0, 0, 0)
+               sourceSize:MTLSizeMake(source_texture.width,
+                                      source_texture.height, 1)
+                toTexture:runtime_texture
+         destinationSlice:0
+         destinationLevel:0
+        destinationOrigin:MTLOriginMake(0, 0, 0)];
+    [blit endEncoding];
+  } else {
+    id<MTLRenderPipelineState> pipeline =
+        impl_->ScalePipeline(runtime_texture.pixelFormat);
+    id<MTLSamplerState> sampler = impl_->ScaleSampler();
+    if (!pipeline || !sampler ||
+        !(runtime_texture.usage & MTLTextureUsageRenderTarget)) {
+      DLOG(ERROR) << __func__
+                  << ": runtime texture cannot accept scaled Metal fallback";
+      return false;
+    }
+
+    MTLRenderPassDescriptor* pass = [MTLRenderPassDescriptor renderPassDescriptor];
+    pass.colorAttachments[0].texture = runtime_texture;
+    pass.colorAttachments[0].loadAction = MTLLoadActionDontCare;
+    pass.colorAttachments[0].storeAction = MTLStoreActionStore;
+
+    id<MTLRenderCommandEncoder> encoder =
+        [command_buffer renderCommandEncoderWithDescriptor:pass];
+    if (!encoder) {
+      DLOG(ERROR) << __func__ << ": failed to create Metal scale encoder";
+      return false;
+    }
+
+    [encoder setRenderPipelineState:pipeline];
+    [encoder setFragmentTexture:source_texture atIndex:0];
+    [encoder setFragmentSamplerState:sampler atIndex:0];
+    [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
+    [encoder endEncoding];
+
+    DVLOG(1) << __func__ << ": scaled WebXR transfer "
+             << source_texture.width << "x" << source_texture.height
+             << " -> OpenXR swapchain " << runtime_texture.width << "x"
+             << runtime_texture.height;
+  }
+
   [command_buffer commit];
 
   // The fallback is deliberately conservative. The runtime may composite on a
@@ -335,9 +477,13 @@ void OpenXrGraphicsBindingMetal::CreateSharedImages(
     return;
   }
 
-  const gfx::Size size = layer.GetSwapchainImageSize();
-  if (size.IsEmpty()) {
-    DLOG(ERROR) << __func__ << ": empty swapchain image size";
+  const gfx::Size runtime_size = layer.GetSwapchainImageSize();
+  gfx::Size transfer_size = layer.GetTransferSize();
+  if (transfer_size.IsEmpty()) {
+    transfer_size = runtime_size;
+  }
+  if (runtime_size.IsEmpty() || transfer_size.IsEmpty()) {
+    DLOG(ERROR) << __func__ << ": empty swapchain/transfer image size";
     return;
   }
 
@@ -349,11 +495,15 @@ void OpenXrGraphicsBindingMetal::CreateSharedImages(
     usage |= gpu::SHARED_IMAGE_USAGE_RASTER_READ |
              gpu::SHARED_IMAGE_USAGE_RASTER_WRITE;
   }
-  const gpu::SharedImageInfo si_info{
-      viz::SinglePlaneFormat::kBGRA_8888, size,
-      gfx::ColorSpace(gfx::ColorSpace::PrimaryID::BT709,
-                      gfx::ColorSpace::TransferID::LINEAR),
-      usage, "OpenXrMetalDirect"};
+  const gfx::ColorSpace color_space(
+      gfx::ColorSpace::PrimaryID::BT709,
+      gfx::ColorSpace::TransferID::LINEAR);
+  const gpu::SharedImageInfo direct_si_info{
+      viz::SinglePlaneFormat::kBGRA_8888, runtime_size, color_space, usage,
+      "OpenXrMetalDirect"};
+  const gpu::SharedImageInfo fallback_si_info{
+      viz::SinglePlaneFormat::kBGRA_8888, transfer_size, color_space, usage,
+      "OpenXrMetalTransfer"};
 
   PublishClaimableTextureFn publish_texture = GetPublishClaimableTextureFn();
 
@@ -381,12 +531,12 @@ void OpenXrGraphicsBindingMetal::CreateSharedImages(
                   << " samples=" << texture.sampleCount;
       return;
     }
-    if (texture.width != static_cast<NSUInteger>(size.width()) ||
-        texture.height != static_cast<NSUInteger>(size.height())) {
+    if (texture.width != static_cast<NSUInteger>(runtime_size.width()) ||
+        texture.height != static_cast<NSUInteger>(runtime_size.height())) {
       DLOG(ERROR) << __func__ << ": runtime texture size "
                   << texture.width << "x" << texture.height
                   << " does not match OpenXR swapchain size "
-                  << size.ToString();
+                  << runtime_size.ToString();
       return;
     }
     if (static_cast<int64_t>(texture.pixelFormat) != swapchain_format_) {
@@ -406,9 +556,10 @@ void OpenXrGraphicsBindingMetal::CreateSharedImages(
     // runtimes) return an MTLTexture which is already IOSurface-backed. An
     // IOSurface can be transferred through Chromium's ordinary GMB/SharedImage
     // machinery without any runtime-specific IPC.
-    if (IOSurfaceRef runtime_surface = texture.iosurface) {
-      swap_chain_info.shared_image = sii->CreateSharedImage(
-          si_info,
+    if (transfer_size == runtime_size) {
+      if (IOSurfaceRef runtime_surface = texture.iosurface) {
+        swap_chain_info.shared_image = sii->CreateSharedImage(
+          direct_si_info,
           gfx::GpuMemoryBufferHandle(gfx::ScopedIOSurface(
               runtime_surface, base::scoped_policy::RETAIN)));
       if (swap_chain_info.shared_image) {
@@ -416,22 +567,23 @@ void OpenXrGraphicsBindingMetal::CreateSharedImages(
         swap_chain_info.sync_token = sii->GenVerifiedSyncToken();
         DVLOG(1) << __func__
                  << ": using direct IOSurface OpenXR texture transport";
-        continue;
+          continue;
+        }
+        DLOG(WARNING) << __func__
+                      << ": runtime IOSurface could not be imported as a "
+                         "SharedImage; trying other transports";
       }
-      DLOG(WARNING) << __func__
-                    << ": runtime IOSurface could not be imported as a "
-                       "SharedImage; trying other transports";
     }
 
     // Monado zero-copy path. The helper turns the runtime-owned MTLTexture into
     // a claimable XPC token which the GPU process resolves on ANGLE's device.
-    if (publish_texture) {
+    if (transfer_size == runtime_size && publish_texture) {
       uint64_t texture_token = 0;
       if (publish_texture(metal_texture, &texture_token) == 0 &&
           texture_token != 0) {
         swap_chain_info.shared_image =
             sii->CreateSharedImageFromMetalTextureToken(
-                si_info, texture_token, /*array_slice=*/0);
+                direct_si_info, texture_token, /*array_slice=*/0);
         if (swap_chain_info.shared_image) {
           impl_->fallback_textures.erase(metal_texture);
           swap_chain_info.sync_token = sii->GenVerifiedSyncToken();
@@ -451,14 +603,16 @@ void OpenXrGraphicsBindingMetal::CreateSharedImages(
     // lets arbitrary macOS OpenXR runtimes work without understanding Monado's
     // XPC transport.
     gfx::ScopedIOSurface fallback_surface = gfx::CreateIOSurface(
-        size, viz::SinglePlaneFormat::kBGRA_8888, /*should_clear=*/true);
+        transfer_size, viz::SinglePlaneFormat::kBGRA_8888,
+        /*should_clear=*/true);
     if (!fallback_surface) {
       DLOG(ERROR) << __func__ << ": failed to allocate fallback IOSurface";
       return;
     }
 
     id<MTLTexture> fallback_texture = CreateIOSurfaceMetalTexture(
-        impl_->device, fallback_surface.get(), size, texture.pixelFormat);
+        impl_->device, fallback_surface.get(), transfer_size,
+        texture.pixelFormat);
     if (!fallback_texture) {
       DLOG(ERROR) << __func__
                   << ": failed to create fallback Metal texture from IOSurface";
@@ -466,7 +620,7 @@ void OpenXrGraphicsBindingMetal::CreateSharedImages(
     }
 
     swap_chain_info.shared_image = sii->CreateSharedImage(
-        si_info,
+        fallback_si_info,
         gfx::GpuMemoryBufferHandle(gfx::ScopedIOSurface(
             fallback_surface.get(), base::scoped_policy::RETAIN)));
     if (!swap_chain_info.shared_image) {
@@ -478,7 +632,9 @@ void OpenXrGraphicsBindingMetal::CreateSharedImages(
     impl_->fallback_textures[metal_texture] = fallback_texture;
     swap_chain_info.sync_token = sii->GenVerifiedSyncToken();
     DVLOG(1) << __func__
-             << ": using runtime-neutral IOSurface Metal blit fallback";
+             << ": using runtime-neutral IOSurface Metal fallback transfer="
+             << transfer_size.ToString()
+             << " runtime=" << runtime_size.ToString();
   }
 }
 
