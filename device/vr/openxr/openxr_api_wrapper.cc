@@ -1237,8 +1237,6 @@ XrResult OpenXrApiWrapper::EndFrame() {
   end_frame_info.environmentBlendMode = blend_mode_;
 
   TRACE_COUNTER1("xr", "ActiveLayers", end_frame_info.layerCount);
-  LOG(INFO) << "XRFRAME xrEndFrame layers=" << end_frame_info.layerCount
-            << " display_time=" << end_frame_info.displayTime;
 
   XrSecondaryViewConfigurationFrameEndInfoMSFT secondary_view_end_frame_info = {
       XR_TYPE_SECONDARY_VIEW_CONFIGURATION_FRAME_END_INFO_MSFT};
