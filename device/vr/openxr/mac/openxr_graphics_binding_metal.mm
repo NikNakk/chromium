@@ -388,6 +388,13 @@ bool OpenXrGraphicsBindingMetal::RenderLayer(
   id<MTLTexture> source_texture = fallback->second;
   id<MTLTexture> runtime_texture =
       (__bridge id<MTLTexture>)swap_chain_info->metal_texture.get();
+  LOG(INFO) << "XRFRAME metal-copy layer=" << layer.GetLayerId()
+            << " source=" << (__bridge void*)source_texture
+            << " runtime=" << (__bridge void*)runtime_texture
+            << " source_size=" << source_texture.width << "x"
+            << source_texture.height
+            << " runtime_size=" << runtime_texture.width << "x"
+            << runtime_texture.height;
   if (!source_texture || !runtime_texture ||
       source_texture.pixelFormat != runtime_texture.pixelFormat) {
     DLOG(ERROR) << __func__
@@ -466,6 +473,9 @@ bool OpenXrGraphicsBindingMetal::RenderLayer(
     return false;
   }
 
+  LOG(INFO) << "XRFRAME metal-copy-complete layer=" << layer.GetLayerId()
+            << " runtime=" << (__bridge void*)runtime_texture
+            << " status=" << static_cast<uint64_t>(command_buffer.status);
   return true;
 }
 
