@@ -9,11 +9,14 @@
 #include <dlfcn.h>
 
 #include <algorithm>
+#include <map>
 #include <utility>
 #include <vector>
 
+#include "base/apple/scoped_nsobject.h"
 #include "base/check.h"
 #include "base/logging.h"
+#include "base/memory/scoped_policy.h"
 #include "components/viz/common/resources/shared_image_format.h"
 #include "device/vr/openxr/openxr_composition_layer.h"
 #include "device/vr/openxr/openxr_platform.h"
@@ -26,6 +29,8 @@
 #include "third_party/openxr/src/include/openxr/openxr.h"
 #include "ui/gfx/color_space.h"
 #include "ui/gfx/gpu_fence.h"
+#include "ui/gfx/gpu_memory_buffer_handle.h"
+#include "ui/gfx/mac/io_surface.h"
 
 namespace device {
 
@@ -64,6 +69,33 @@ PublishClaimableTextureFn GetPublishClaimableTextureFn() {
   return fn;
 }
 
+base::apple::scoped_nsprotocol<id<MTLTexture>>
+CreateIOSurfaceMetalTexture(id<MTLDevice> device,
+                            IOSurfaceRef io_surface,
+                            const gfx::Size& size,
+                            MTLPixelFormat pixel_format) {
+  base::apple::scoped_nsobject<MTLTextureDescriptor> descriptor(
+      [[MTLTextureDescriptor alloc] init]);
+  [descriptor.get() setTextureType:MTLTextureType2D];
+  [descriptor.get()
+      setUsage:MTLTextureUsageShaderRead | MTLTextureUsageShaderWrite |
+               MTLTextureUsageRenderTarget];
+  [descriptor.get() setPixelFormat:pixel_format];
+  [descriptor.get() setWidth:size.width()];
+  [descriptor.get() setHeight:size.height()];
+  [descriptor.get() setDepth:1];
+  [descriptor.get() setMipmapLevelCount:1];
+  [descriptor.get() setArrayLength:1];
+  [descriptor.get() setSampleCount:1];
+  [descriptor.get() setStorageMode:MTLStorageModeManaged];
+
+  base::apple::scoped_nsprotocol<id<MTLTexture>> texture;
+  texture.reset([device newTextureWithDescriptor:descriptor.get()
+                                       iosurface:io_surface
+                                           plane:0]);
+  return texture;
+}
+
 }  // namespace
 
 // static
@@ -77,6 +109,14 @@ class OpenXrGraphicsBindingMetal::Impl {
   id<MTLDevice> __strong device = nil;
   id<MTLCommandQueue> __strong command_queue = nil;
   XrGraphicsBindingMetalKHR binding{XR_TYPE_GRAPHICS_BINDING_METAL_KHR};
+
+  // Most runtimes either expose an IOSurface-backed swapchain texture directly
+  // or, for Monado, can publish that texture through Monado's Metal XPC helper.
+  // If neither direct path is possible, Blink renders into one of these
+  // Chromium-owned IOSurface textures and RenderLayer() blits it into the
+  // runtime-owned OpenXR texture before release/submission.
+  std::map<void*, base::apple::scoped_nsprotocol<id<MTLTexture>>>
+      fallback_textures;
 };
 
 OpenXrGraphicsBindingMetal::OpenXrGraphicsBindingMetal(
@@ -177,11 +217,11 @@ XrResult OpenXrGraphicsBindingMetal::EnumerateSwapchainImages(
 }
 
 bool OpenXrGraphicsBindingMetal::CanUseSharedImages() const {
-  // The external EGLImage backing used by this path provides WebGL/GL
-  // representations. Chromium's Dawn/Metal SharedImage representation does not
-  // yet import EGL_METAL_TEXTURE_ANGLE, so do not advertise WebGPU support.
-  return !IsWebGPUSession() && impl_->device != nil &&
-         GetPublishClaimableTextureFn() != nullptr;
+  // WebGL can always use the runtime-neutral IOSurface copy fallback. Monado
+  // additionally gets the zero-copy XPC-token path, and runtimes whose Metal
+  // swapchain textures are already IOSurface-backed get a generic zero-copy
+  // path. WebGPU still needs a native Dawn/Metal import path.
+  return !IsWebGPUSession() && impl_->device != nil;
 }
 
 bool OpenXrGraphicsBindingMetal::RequiresSharedImages() const {
@@ -232,11 +272,62 @@ bool OpenXrGraphicsBindingMetal::WaitOnFence(OpenXrCompositionLayer& layer,
 bool OpenXrGraphicsBindingMetal::RenderLayer(
     OpenXrCompositionLayer& layer,
     const scoped_refptr<viz::ContextProvider>& context_provider) {
-  // No copy/composite is required for the base WebXR layer: Blink/ANGLE wrote
-  // directly into the OpenXR runtime's shared MTLTexture storage.
   const OpenXrSwapchainInfo* swap_chain_info =
       layer.GetActiveSwapchainImage();
-  return swap_chain_info && swap_chain_info->shared_image;
+  if (!swap_chain_info || !swap_chain_info->shared_image) {
+    return false;
+  }
+
+  auto fallback =
+      impl_->fallback_textures.find(swap_chain_info->metal_texture.get());
+  if (fallback == impl_->fallback_textures.end()) {
+    // Direct IOSurface or Monado XPC-token path: Blink/ANGLE rendered into the
+    // runtime's storage, so there is nothing to copy.
+    return true;
+  }
+
+  id<MTLTexture> source_texture = fallback->second.get();
+  id<MTLTexture> runtime_texture =
+      (__bridge id<MTLTexture>)swap_chain_info->metal_texture.get();
+  if (!source_texture || !runtime_texture ||
+      source_texture.width != runtime_texture.width ||
+      source_texture.height != runtime_texture.height ||
+      source_texture.pixelFormat != runtime_texture.pixelFormat) {
+    DLOG(ERROR) << __func__
+                << ": fallback and runtime Metal textures are incompatible";
+    return false;
+  }
+
+  id<MTLCommandBuffer> command_buffer = [impl_->command_queue commandBuffer];
+  id<MTLBlitCommandEncoder> blit = [command_buffer blitCommandEncoder];
+  if (!command_buffer || !blit) {
+    DLOG(ERROR) << __func__ << ": failed to create Metal blit command";
+    return false;
+  }
+
+  [blit copyFromTexture:source_texture
+            sourceSlice:0
+            sourceLevel:0
+           sourceOrigin:MTLOriginMake(0, 0, 0)
+             sourceSize:MTLSizeMake(source_texture.width,
+                                    source_texture.height, 1)
+              toTexture:runtime_texture
+       destinationSlice:0
+       destinationLevel:0
+      destinationOrigin:MTLOriginMake(0, 0, 0)];
+  [blit endEncoding];
+  [command_buffer commit];
+
+  // The fallback is deliberately conservative. The runtime may composite on a
+  // different queue/API (Meta XR Simulator bridges Metal to Vulkan), so make
+  // the copy complete before xrReleaseSwapchainImage hands ownership back.
+  [command_buffer waitUntilCompleted];
+  if (command_buffer.status == MTLCommandBufferStatusError) {
+    DLOG(ERROR) << __func__ << ": Metal fallback blit failed";
+    return false;
+  }
+
+  return true;
 }
 
 void OpenXrGraphicsBindingMetal::CreateSharedImages(
@@ -246,12 +337,6 @@ void OpenXrGraphicsBindingMetal::CreateSharedImages(
   if (IsWebGPUSession()) {
     DLOG(ERROR) << __func__
                 << ": direct Metal SharedImages do not yet support WebGPU";
-    return;
-  }
-
-  PublishClaimableTextureFn publish_texture = GetPublishClaimableTextureFn();
-  if (!publish_texture) {
-    DLOG(ERROR) << __func__ << ": Monado Metal XPC helper unavailable";
     return;
   }
 
@@ -275,10 +360,13 @@ void OpenXrGraphicsBindingMetal::CreateSharedImages(
                       gfx::ColorSpace::TransferID::LINEAR),
       usage, "OpenXrMetalDirect"};
 
+  PublishClaimableTextureFn publish_texture = GetPublishClaimableTextureFn();
+
   for (auto& swap_chain_info : layer.GetSwapchainImages()) {
     if (swap_chain_info.shared_image) {
       continue;
     }
+
     void* metal_texture = swap_chain_info.metal_texture.get();
     if (!metal_texture) {
       DLOG(ERROR) << __func__ << ": OpenXR swapchain texture is null";
@@ -314,26 +402,88 @@ void OpenXrGraphicsBindingMetal::CreateSharedImages(
       return;
     }
 
-    uint64_t texture_token = 0;
-    if (publish_texture(metal_texture, &texture_token) != 0 ||
-        texture_token == 0) {
-      DLOG(ERROR) << __func__
-                  << ": failed to publish claimable Monado texture token";
+    DVLOG(1) << __func__ << ": runtime Metal texture iosurface="
+             << (texture.iosurface != nullptr)
+             << " storageMode=" << static_cast<uint64_t>(texture.storageMode)
+             << " usage=" << static_cast<uint64_t>(texture.usage);
+
+    // Generic zero-copy path. Some runtimes (including simulator-style
+    // runtimes) return an MTLTexture which is already IOSurface-backed. An
+    // IOSurface can be transferred through Chromium's ordinary GMB/SharedImage
+    // machinery without any runtime-specific IPC.
+    if (IOSurfaceRef runtime_surface = texture.iosurface) {
+      swap_chain_info.shared_image = sii->CreateSharedImage(
+          si_info,
+          gfx::GpuMemoryBufferHandle(gfx::ScopedIOSurface(
+              runtime_surface, base::scoped_policy::RETAIN)));
+      if (swap_chain_info.shared_image) {
+        impl_->fallback_textures.erase(metal_texture);
+        swap_chain_info.sync_token = sii->GenVerifiedSyncToken();
+        DVLOG(1) << __func__
+                 << ": using direct IOSurface OpenXR texture transport";
+        continue;
+      }
+      DLOG(WARNING) << __func__
+                    << ": runtime IOSurface could not be imported as a "
+                       "SharedImage; trying other transports";
+    }
+
+    // Monado zero-copy path. The helper turns the runtime-owned MTLTexture into
+    // a claimable XPC token which the GPU process resolves on ANGLE's device.
+    if (publish_texture) {
+      uint64_t texture_token = 0;
+      if (publish_texture(metal_texture, &texture_token) == 0 &&
+          texture_token != 0) {
+        swap_chain_info.shared_image =
+            sii->CreateSharedImageFromMetalTextureToken(
+                si_info, texture_token, /*array_slice=*/0);
+        if (swap_chain_info.shared_image) {
+          impl_->fallback_textures.erase(metal_texture);
+          swap_chain_info.sync_token = sii->GenVerifiedSyncToken();
+          DVLOG(1) << __func__
+                   << ": using Monado Metal XPC zero-copy transport";
+          continue;
+        }
+        DLOG(WARNING) << __func__
+                      << ": Monado token could not be imported as a "
+                         "SharedImage; using IOSurface copy fallback";
+      }
+    }
+
+    // Runtime-neutral fallback. Render into a Chromium-owned IOSurface that can
+    // be shared with Blink/ANGLE, then copy it into the runtime swapchain
+    // texture in RenderLayer(). This costs one GPU blit per submitted layer but
+    // lets arbitrary macOS OpenXR runtimes work without understanding Monado's
+    // XPC transport.
+    gfx::ScopedIOSurface fallback_surface = gfx::CreateIOSurface(
+        size, viz::SinglePlaneFormat::kBGRA_8888, /*should_clear=*/true);
+    if (!fallback_surface) {
+      DLOG(ERROR) << __func__ << ": failed to allocate fallback IOSurface";
       return;
     }
 
-    // Chromium's current projection swapchain is a double-wide 2D texture
-    // (arraySize=1). array_slice remains explicit in the transport so future
-    // array-backed layer types can select a Metal texture slice directly.
-    swap_chain_info.shared_image =
-        sii->CreateSharedImageFromMetalTextureToken(si_info, texture_token,
-                                                    /*array_slice=*/0);
-    if (!swap_chain_info.shared_image) {
+    auto fallback_texture = CreateIOSurfaceMetalTexture(
+        impl_->device, fallback_surface.get(), size, texture.pixelFormat);
+    if (!fallback_texture) {
       DLOG(ERROR) << __func__
-                  << ": failed to create SharedImage from Metal token";
+                  << ": failed to create fallback Metal texture from IOSurface";
       return;
     }
+
+    swap_chain_info.shared_image = sii->CreateSharedImage(
+        si_info,
+        gfx::GpuMemoryBufferHandle(gfx::ScopedIOSurface(
+            fallback_surface.get(), base::scoped_policy::RETAIN)));
+    if (!swap_chain_info.shared_image) {
+      DLOG(ERROR) << __func__
+                  << ": failed to create SharedImage for fallback IOSurface";
+      return;
+    }
+
+    impl_->fallback_textures[metal_texture] = std::move(fallback_texture);
     swap_chain_info.sync_token = sii->GenVerifiedSyncToken();
+    DVLOG(1) << __func__
+             << ": using runtime-neutral IOSurface Metal blit fallback";
   }
 }
 
