@@ -14,6 +14,29 @@
   (allow file-read* file-map-executable
     (subpath (param openxr-runtime-dir))))
 
+; System-wide OpenXR runtime discovery on macOS follows the Khronos loader's
+; Unix-style active runtime manifest. Permit only that registry directory so a
+; sandboxed XR service can honor the system-selected runtime without requiring
+; XR_RUNTIME_JSON.
+(allow file-read*
+  (subpath "/usr/local/share/openxr/1"))
+
+; Meta XR Simulator installs its native runtime inside this application bundle.
+; The OpenXR loader must be able to read the manifest and map the simulator
+; runtime dylib plus its bundled support libraries/resources. Keep the exception
+; scoped to the simulator bundle rather than opening /Applications generally.
+(allow file-read* file-map-executable
+  (subpath "/Applications/MetaXRSimulator.app"))
+
+; The simulator stores configuration, key bindings and logs under its own
+; Application Support directory. It also starts a localhost RPC service used by
+; the simulator UI; the GPU policy composed with this profile supplies the
+; required local socket primitives.
+(define meta-xr-simulator-data-dir
+  (user-homedir-path "/Library/Application Support/MetaXR"))
+(allow file-read* file-write* file-write-create
+  (subpath meta-xr-simulator-data-dir))
+
 ; Monado's native OpenXR client still uses its ordinary Unix-domain IPC
 ; channel to monado-service. On macOS, without XDG overrides, the socket lives
 ; below ~/Library/Caches/monado. Permit only that runtime directory and socket.
