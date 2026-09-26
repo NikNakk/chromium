@@ -749,49 +749,6 @@ bool SharedImageFactory::CreateSharedImage(
   return RegisterBacking(std::move(backing), std::move(pool_id));
 }
 
-#if BUILDFLAG(IS_MAC)
-bool SharedImageFactory::CreateSharedImageFromExternalEGLImage(
-    const Mailbox& mailbox,
-    const SharedImageInfo& si_info,
-    gl::ScopedEGLImage external_egl_image) {
-  auto* base_factory = GetFactoryByType(SharedImageBackingType::kEGLImage);
-
-  // The generic EGLImage factory is only registered when Chromium advertises
-  // the full set of EGL/GL capabilities needed to create EGLImages from GL
-  // textures. The macOS OpenXR path is different: ANGLE has already imported
-  // an external MTLTexture as an EGLImage, so it only needs EGLImageBacking to
-  // wrap that existing image and expose GL representations to WebXR.
-  std::unique_ptr<EGLImageBackingFactory> external_egl_factory;
-  EGLImageBackingFactory* egl_factory = nullptr;
-  if (base_factory) {
-    egl_factory = static_cast<EGLImageBackingFactory*>(base_factory);
-  } else {
-    CHECK(context_state_);
-    auto* feature_info = context_state_->feature_info();
-    CHECK(feature_info);
-    external_egl_factory = std::make_unique<EGLImageBackingFactory>(
-        gpu_preferences_, workarounds_, feature_info);
-    egl_factory = external_egl_factory.get();
-    DVLOG(1) << __func__
-             << ": using external-only EGLImage backing factory on macOS";
-  }
-
-  std::unique_ptr<SharedImageBacking> backing =
-      egl_factory->CreateSharedImageFromExternalEGLImage(
-          mailbox, si_info, std::move(external_egl_image));
-  if (!backing) {
-    DLOG(ERROR) << __func__ << ": failed to wrap external EGLImage";
-    return false;
-  }
-
-  DVLOG(1) << "CreateSharedImageFromExternalEGLImage size="
-           << si_info.size.ToString()
-           << " usage=" << CreateLabelForSharedImageUsage(si_info.usage)
-           << " format=" << si_info.format.ToString();
-  return RegisterBacking(std::move(backing));
-}
-#endif
-
 bool SharedImageFactory::UpdateSharedImage(const Mailbox& mailbox,
                                            gfx::GpuFenceHandle in_fence) {
   return shared_image_manager_->UpdateSharedImage(mailbox, std::move(in_fence));

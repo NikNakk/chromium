@@ -64,32 +64,6 @@ std::unique_ptr<SharedImageBacking> EGLImageBackingFactory::CreateSharedImage(
   return MakeEglImageBacking(mailbox, si_info, pixel_data);
 }
 
-std::unique_ptr<SharedImageBacking>
-EGLImageBackingFactory::CreateSharedImageFromExternalEGLImage(
-    const Mailbox& mailbox,
-    const SharedImageInfo& si_info,
-    gl::ScopedEGLImage external_egl_image) {
-  if (!external_egl_image.get() || si_info.array_layers != 1 ||
-      si_info.format.NumberOfPlanes() != 1) {
-    return nullptr;
-  }
-
-  auto estimated_size = si_info.format.MaybeEstimatedSizeInBytes(si_info.size);
-  if (!estimated_size) {
-    DLOG(ERROR) << __func__ << ": failed to calculate SharedImage size";
-    return nullptr;
-  }
-
-  auto format_info = GetFormatInfo(si_info.format);
-  if (format_info.size() != 1u) {
-    return nullptr;
-  }
-
-  return std::make_unique<EGLImageBacking>(
-      mailbox, si_info, estimated_size.value(), format_info, use_passthrough_,
-      std::move(external_egl_image));
-}
-
 bool EGLImageBackingFactory::IsSupported(SharedImageUsageSet usage,
                                          viz::SharedImageFormat format,
                                          const gfx::Size& size,

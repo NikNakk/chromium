@@ -15,7 +15,6 @@
 #include "gpu/config/gpu_driver_bug_workarounds.h"
 #include "gpu/gpu_gles2_export.h"
 #include "ui/gl/gl_bindings.h"
-#include "ui/gl/scoped_egl_image.h"
 
 namespace gfx {
 class Size;
@@ -49,12 +48,6 @@ class GPU_GLES2_EXPORT EGLImageBackingFactory
       bool is_thread_safe,
       base::span<const uint8_t> pixel_data) override;
 
-  // Creates a SharedImage around an EGLImage whose storage was imported from
-  // outside Chromium (for example EGL_METAL_TEXTURE_ANGLE on macOS).
-  std::unique_ptr<SharedImageBacking> CreateSharedImageFromExternalEGLImage(
-      const Mailbox& mailbox,
-      const SharedImageInfo& si_info,
-      gl::ScopedEGLImage external_egl_image);
   bool IsSupported(SharedImageUsageSet usage,
                    viz::SharedImageFormat format,
                    const gfx::Size& size,

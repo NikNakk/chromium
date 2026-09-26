@@ -33,9 +33,6 @@
 #include "ui/gfx/gpu_extra_info.h"
 #include "ui/gfx/gpu_memory_buffer_handle.h"
 #include "ui/gl/gl_bindings.h"
-#if BUILDFLAG(IS_MAC)
-#include "ui/gl/scoped_egl_image.h"
-#endif
 
 namespace gpu {
 class MemoryTracker;
@@ -118,14 +115,6 @@ class GPU_GLES2_EXPORT SharedImageFactory {
       gfx::GpuMemoryBufferHandle buffer_handle,
       std::optional<SharedImagePoolId> pool_id = std::nullopt);
 
-#if BUILDFLAG(IS_MAC)
-  // Registers a SharedImage backed by externally-owned storage represented by
-  // an EGLImage, without asking Chromium to allocate replacement storage.
-  bool CreateSharedImageFromExternalEGLImage(
-      const Mailbox& mailbox,
-      const SharedImageInfo& si_info,
-      gl::ScopedEGLImage external_egl_image);
-#endif
   bool UpdateSharedImage(const Mailbox& mailbox, gfx::GpuFenceHandle in_fence);
   bool DestroySharedImage(const Mailbox& mailbox);
   void SetSharedImagePurgeable(const Mailbox& mailbox, bool purgeable);
