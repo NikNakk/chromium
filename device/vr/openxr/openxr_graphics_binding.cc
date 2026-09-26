@@ -695,6 +695,31 @@ void OpenXrGraphicsBinding::SetEnabledCompositionLayers(
   has_custom_projection_layer_ = false;
   for (auto& [id, layer] : layers_) {
     if (enabled_layers.contains(id)) {
+#if BUILDFLAG(IS_MAC)
+      if (RequiresSharedImages() &&
+          layer->type() == OpenXrCompositionLayer::Type::kProjection) {
+        // WebXR projection layers may use a framebuffer scale factor that is
+        // different from the runtime's native/base projection size. The Metal
+        // shared-image path exposes this swapchain directly to Blink, so the
+        // OpenXR swapchain must match the layer descriptor exactly.
+        //
+        // Reassert this immediately before swapchain creation rather than only
+        // in CreateCompositionLayer(). Base-layer size/transfer updates can
+        // occur between layer creation and activation.
+        const gfx::Size layer_size(layer->read_only_data().texture_width,
+                                   layer->read_only_data().texture_height);
+        if (layer->GetSwapchainImageSize() != layer_size) {
+          LOG(WARNING) << __func__ << ": correcting macOS projection layer "
+                       << id << " swapchain size from "
+                       << layer->GetSwapchainImageSize().ToString() << " to "
+                       << layer_size.ToString();
+          if (layer->HasColorSwapchain()) {
+            layer->DestroySwapchain(sii);
+          }
+          layer->SetSwapchainImageSize(layer_size);
+        }
+      }
+#endif
       if (!layer->HasColorSwapchain()) {
         uint32_t layer_sample_count = swapchain_sample_count;
 #if BUILDFLAG(IS_MAC)
