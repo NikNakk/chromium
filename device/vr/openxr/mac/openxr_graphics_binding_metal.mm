@@ -14,6 +14,8 @@
 #include <vector>
 
 #include "base/check.h"
+#include "base/compiler_specific.h"
+#include "base/containers/span.h"
 #include "base/logging.h"
 #include "base/memory/scoped_policy.h"
 #include "components/viz/common/resources/shared_image_format.h"
@@ -116,12 +118,21 @@ void SynchronizeAndFingerprintIOSurface(id<MTLTexture> texture,
     return;
   }
 
-  const auto* base =
+  const auto* data =
       static_cast<const uint8_t*>(IOSurfaceGetBaseAddress(surface));
+  const size_t mapped_size = IOSurfaceGetAllocSize(surface);
   const size_t bytes_per_row = IOSurfaceGetBytesPerRow(surface);
   const size_t bytes_per_element = IOSurfaceGetBytesPerElement(surface);
   const size_t width = IOSurfaceGetWidth(surface);
   const size_t height = IOSurfaceGetHeight(surface);
+
+  // IOSurface exposes its CPU mapping as a raw pointer. Keep the unavoidable
+  // unsafe operation at that API boundary, then use a bounds-carrying span for
+  // all sampling below.
+  const base::span<const uint8_t> bytes =
+      data && mapped_size
+          ? UNSAFE_BUFFERS(base::span<const uint8_t>(data, mapped_size))
+          : base::span<const uint8_t>();
 
   uint64_t hash = 1469598103934665603ULL;
   uint64_t rgb_sum = 0;
@@ -131,20 +142,22 @@ void SynchronizeAndFingerprintIOSurface(id<MTLTexture> texture,
   // A small fixed grid is enough to distinguish a cleared/black transfer
   // surface from ordinary scene content without reading the full ~12 MB image
   // back to the CPU every frame.
-  if (base && bytes_per_element >= 4 && width > 0 && height > 0) {
+  if (!bytes.empty() && bytes_per_element >= 4 && width > 0 && height > 0) {
     constexpr size_t kGrid = 8;
     for (size_t gy = 0; gy < kGrid; ++gy) {
       const size_t y = ((height - 1) * gy) / (kGrid - 1);
       for (size_t gx = 0; gx < kGrid; ++gx) {
         const size_t x = ((width - 1) * gx) / (kGrid - 1);
-        const uint8_t* pixel =
-            base + y * bytes_per_row + x * bytes_per_element;
+        const size_t offset = y * bytes_per_row + x * bytes_per_element;
+        if (offset > bytes.size() || bytes.size() - offset < 3) {
+          continue;
+        }
 
         // The fallback SharedImage is BGRA8. Ignore alpha so an opaque black
         // clear cannot masquerade as non-black content.
-        const uint8_t blue = pixel[0];
-        const uint8_t green = pixel[1];
-        const uint8_t red = pixel[2];
+        const uint8_t blue = bytes[offset];
+        const uint8_t green = bytes[offset + 1];
+        const uint8_t red = bytes[offset + 2];
         rgb_sum += static_cast<uint64_t>(red) + green + blue;
         nonblack_samples += (red | green | blue) != 0;
 
