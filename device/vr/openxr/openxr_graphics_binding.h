@@ -318,6 +318,17 @@ class OpenXrGraphicsBinding {
       XrViewConfigurationType,
       std::vector<XrCompositionLayerProjectionView>>
       last_rendered_base_projection_views_;
+
+  // Explicit projection layers need the same sparse-frame pose handling as the
+  // base layer. If Blink skips drawing a frame, OpenXR keeps presenting the
+  // last released swapchain image; keep the view pose/FOV paired with those
+  // pixels until that particular layer is rendered again.
+  mutable std::map<
+      LayerId,
+      std::map<XrViewConfigurationType,
+               std::vector<XrCompositionLayerProjectionView>>>
+      last_rendered_layer_projection_views_;
+
   // Each client created layer has a unique ID.
   std::map<LayerId, std::unique_ptr<OpenXrCompositionLayer>> layers_;
   // This sequence defines which layers should be composed.
