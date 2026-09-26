@@ -13,7 +13,6 @@
 #include <utility>
 #include <vector>
 
-#include "base/apple/scoped_nsobject.h"
 #include "base/check.h"
 #include "base/logging.h"
 #include "base/memory/scoped_policy.h"
@@ -69,31 +68,26 @@ PublishClaimableTextureFn GetPublishClaimableTextureFn() {
   return fn;
 }
 
-base::apple::scoped_nsprotocol<id<MTLTexture>>
-CreateIOSurfaceMetalTexture(id<MTLDevice> device,
-                            IOSurfaceRef io_surface,
-                            const gfx::Size& size,
-                            MTLPixelFormat pixel_format) {
-  base::apple::scoped_nsobject<MTLTextureDescriptor> descriptor(
-      [[MTLTextureDescriptor alloc] init]);
-  [descriptor.get() setTextureType:MTLTextureType2D];
-  [descriptor.get()
-      setUsage:MTLTextureUsageShaderRead | MTLTextureUsageShaderWrite |
-               MTLTextureUsageRenderTarget];
-  [descriptor.get() setPixelFormat:pixel_format];
-  [descriptor.get() setWidth:size.width()];
-  [descriptor.get() setHeight:size.height()];
-  [descriptor.get() setDepth:1];
-  [descriptor.get() setMipmapLevelCount:1];
-  [descriptor.get() setArrayLength:1];
-  [descriptor.get() setSampleCount:1];
-  [descriptor.get() setStorageMode:MTLStorageModeManaged];
+id<MTLTexture> CreateIOSurfaceMetalTexture(id<MTLDevice> device,
+                                           IOSurfaceRef io_surface,
+                                           const gfx::Size& size,
+                                           MTLPixelFormat pixel_format) {
+  MTLTextureDescriptor* descriptor = [[MTLTextureDescriptor alloc] init];
+  descriptor.textureType = MTLTextureType2D;
+  descriptor.usage = MTLTextureUsageShaderRead | MTLTextureUsageShaderWrite |
+                     MTLTextureUsageRenderTarget;
+  descriptor.pixelFormat = pixel_format;
+  descriptor.width = size.width();
+  descriptor.height = size.height();
+  descriptor.depth = 1;
+  descriptor.mipmapLevelCount = 1;
+  descriptor.arrayLength = 1;
+  descriptor.sampleCount = 1;
+  descriptor.storageMode = MTLStorageModeShared;
 
-  base::apple::scoped_nsprotocol<id<MTLTexture>> texture;
-  texture.reset([device newTextureWithDescriptor:descriptor.get()
-                                       iosurface:io_surface
-                                           plane:0]);
-  return texture;
+  return [device newTextureWithDescriptor:descriptor
+                                iosurface:io_surface
+                                    plane:0];
 }
 
 }  // namespace
@@ -115,8 +109,9 @@ class OpenXrGraphicsBindingMetal::Impl {
   // If neither direct path is possible, Blink renders into one of these
   // Chromium-owned IOSurface textures and RenderLayer() blits it into the
   // runtime-owned OpenXR texture before release/submission.
-  std::map<void*, base::apple::scoped_nsprotocol<id<MTLTexture>>>
-      fallback_textures;
+  // Objective-C object pointers stored in C++ containers are strong under ARC;
+  // libc++ invokes the ARC copy/destroy semantics as map entries move and die.
+  std::map<void*, id<MTLTexture>> fallback_textures;
 };
 
 OpenXrGraphicsBindingMetal::OpenXrGraphicsBindingMetal(
@@ -286,7 +281,7 @@ bool OpenXrGraphicsBindingMetal::RenderLayer(
     return true;
   }
 
-  id<MTLTexture> source_texture = fallback->second.get();
+  id<MTLTexture> source_texture = fallback->second;
   id<MTLTexture> runtime_texture =
       (__bridge id<MTLTexture>)swap_chain_info->metal_texture.get();
   if (!source_texture || !runtime_texture ||
@@ -462,7 +457,7 @@ void OpenXrGraphicsBindingMetal::CreateSharedImages(
       return;
     }
 
-    auto fallback_texture = CreateIOSurfaceMetalTexture(
+    id<MTLTexture> fallback_texture = CreateIOSurfaceMetalTexture(
         impl_->device, fallback_surface.get(), size, texture.pixelFormat);
     if (!fallback_texture) {
       DLOG(ERROR) << __func__
@@ -480,7 +475,7 @@ void OpenXrGraphicsBindingMetal::CreateSharedImages(
       return;
     }
 
-    impl_->fallback_textures[metal_texture] = std::move(fallback_texture);
+    impl_->fallback_textures[metal_texture] = fallback_texture;
     swap_chain_info.sync_token = sii->GenVerifiedSyncToken();
     DVLOG(1) << __func__
              << ": using runtime-neutral IOSurface Metal blit fallback";
