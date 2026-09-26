@@ -25,11 +25,14 @@
   (literal (string-append monado-runtime-dir "/monado_comp_ipc")))
 
 ; Monado's macOS OpenXR runtime is linked against the Homebrew Vulkan loader
-; even when Chromium uses the native Metal graphics binding. dyld must be able
-; to map that dependency before the runtime can initialize. Keep this grant to
-; the versioned loader dylib rather than opening the Homebrew prefix generally.
+; even when Chromium uses the native Metal graphics binding. Homebrew's
+; /opt/homebrew/opt/vulkan-loader path is a symlink into Cellar. Seatbelt may
+; evaluate the resolved vnode path, while dyld reports the original opt path,
+; so permit this formula directory in both locations without opening the rest
+; of Homebrew.
 (allow file-read* file-map-executable
-  (literal "/opt/homebrew/opt/vulkan-loader/lib/libvulkan.1.dylib"))
+  (subpath "/opt/homebrew/opt/vulkan-loader")
+  (subpath "/opt/homebrew/Cellar/vulkan-loader"))
 
 ; Chromium's OpenXR process loads only the small Monado helper used to turn
 ; shared Metal textures into opaque XPC tokens.
