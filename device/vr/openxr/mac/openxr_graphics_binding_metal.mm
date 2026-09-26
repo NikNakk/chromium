@@ -90,6 +90,87 @@ id<MTLTexture> CreateIOSurfaceMetalTexture(id<MTLDevice> device,
                                     plane:0];
 }
 
+
+void SynchronizeAndFingerprintIOSurface(id<MTLTexture> texture,
+                                        LayerId layer_id) {
+  IOSurfaceRef surface = texture.iosurface;
+  if (!surface) {
+    LOG(INFO) << "XRFRAME iosurface-source layer=" << layer_id
+              << " available=0";
+    return;
+  }
+
+  // This is deliberately diagnostic and stronger than the normal GPU-only
+  // handoff. The renderer/GPU process has already completed the SharedImage
+  // write before RenderLayer() is reached. Locking here forces this process to
+  // observe the IOSurface through the CPU mapping as well, and unlocking with
+  // write-capable options advances the IOSurface seed. If this alone removes
+  // the flicker, the generic fallback still needs a native cross-process
+  // synchronization/coherency primitive rather than only a Mojo sync-token
+  // completion callback.
+  const uint32_t seed_before = IOSurfaceGetSeed(surface);
+  const auto lock_result = IOSurfaceLock(surface, /*options=*/0, nullptr);
+  if (lock_result != 0) {
+    LOG(WARNING) << "XRFRAME iosurface-source layer=" << layer_id
+                 << " lock=" << lock_result;
+    return;
+  }
+
+  const auto* base =
+      static_cast<const uint8_t*>(IOSurfaceGetBaseAddress(surface));
+  const size_t bytes_per_row = IOSurfaceGetBytesPerRow(surface);
+  const size_t bytes_per_element = IOSurfaceGetBytesPerElement(surface);
+  const size_t width = IOSurfaceGetWidth(surface);
+  const size_t height = IOSurfaceGetHeight(surface);
+
+  uint64_t hash = 1469598103934665603ULL;
+  uint64_t rgb_sum = 0;
+  uint32_t nonblack_samples = 0;
+  uint32_t sample_count = 0;
+
+  // A small fixed grid is enough to distinguish a cleared/black transfer
+  // surface from ordinary scene content without reading the full ~12 MB image
+  // back to the CPU every frame.
+  if (base && bytes_per_element >= 4 && width > 0 && height > 0) {
+    constexpr size_t kGrid = 8;
+    for (size_t gy = 0; gy < kGrid; ++gy) {
+      const size_t y = ((height - 1) * gy) / (kGrid - 1);
+      for (size_t gx = 0; gx < kGrid; ++gx) {
+        const size_t x = ((width - 1) * gx) / (kGrid - 1);
+        const uint8_t* pixel =
+            base + y * bytes_per_row + x * bytes_per_element;
+
+        // The fallback SharedImage is BGRA8. Ignore alpha so an opaque black
+        // clear cannot masquerade as non-black content.
+        const uint8_t blue = pixel[0];
+        const uint8_t green = pixel[1];
+        const uint8_t red = pixel[2];
+        rgb_sum += static_cast<uint64_t>(red) + green + blue;
+        nonblack_samples += (red | green | blue) != 0;
+
+        hash ^= blue;
+        hash *= 1099511628211ULL;
+        hash ^= green;
+        hash *= 1099511628211ULL;
+        hash ^= red;
+        hash *= 1099511628211ULL;
+        ++sample_count;
+      }
+    }
+  }
+
+  const auto unlock_result = IOSurfaceUnlock(surface, /*options=*/0, nullptr);
+  const uint32_t seed_after = IOSurfaceGetSeed(surface);
+  LOG(INFO) << "XRFRAME iosurface-source layer=" << layer_id
+            << " size=" << width << "x" << height
+            << " samples=" << sample_count
+            << " nonblack=" << nonblack_samples
+            << " rgb_sum=" << rgb_sum
+            << " hash=" << hash
+            << " seed=" << seed_before << "->" << seed_after
+            << " unlock=" << unlock_result;
+}
+
 }  // namespace
 
 // static
@@ -401,6 +482,8 @@ bool OpenXrGraphicsBindingMetal::RenderLayer(
                 << ": fallback and runtime Metal textures are incompatible";
     return false;
   }
+
+  SynchronizeAndFingerprintIOSurface(source_texture, layer.GetLayerId());
 
   id<MTLCommandBuffer> command_buffer = [impl_->command_queue commandBuffer];
   if (!command_buffer) {
