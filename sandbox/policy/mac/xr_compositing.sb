@@ -37,6 +37,14 @@
 (allow file-read* file-write* file-write-create
   (subpath meta-xr-simulator-data-dir))
 
+; Current Meta XR Simulator builds also retain a legacy Oculus-named data tree
+; and enumerate its logs directory during startup. Denying directory traversal
+; there throws an uncaught std::filesystem exception inside the simulator.
+(define meta-xr-simulator-legacy-data-dir
+  (user-homedir-path "/Library/Application Support/Oculus/MetaXrSimulator"))
+(allow file-read* file-write* file-write-create
+  (subpath meta-xr-simulator-legacy-data-dir))
+
 ; Monado's native OpenXR client still uses its ordinary Unix-domain IPC
 ; channel to monado-service. On macOS, without XDG overrides, the socket lives
 ; below ~/Library/Caches/monado. Permit only that runtime directory and socket.
