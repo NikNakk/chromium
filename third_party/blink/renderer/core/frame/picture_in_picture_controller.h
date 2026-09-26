@@ -86,7 +86,7 @@ class CORE_EXPORT PictureInPictureController
 
   // Exits an internally managed immersive video session for the given element.
   virtual void ExitPictureInPictureImmersive(
-      HTMLVideoElement& video_element) = 0;
+      HTMLVideoElement& video_element) {}
 
   // Exit Picture-in-Picture for a video element and resolve promise if any.
   virtual void ExitPictureInPicture(HTMLVideoElement*,

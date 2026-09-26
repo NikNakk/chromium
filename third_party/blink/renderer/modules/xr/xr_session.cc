@@ -2791,7 +2791,7 @@ void XRSession::SetInternalCompositionLayer(XRLayer* layer) {
   }
 }
 
-void XRSession::PumpInternalCompositionLayerFrame(double timestamp) {
+void XRSession::PumpInternalCompositionLayerFrame(double /*timestamp*/) {
   if (ended_ || !internal_composition_layer_frame_pump_) {
     return;
   }
