@@ -762,6 +762,30 @@ void VRServiceImpl::GetPermissionStatus(SessionRequestData request,
   CHECK(runtime, base::NotFatalUntil::M159);
   CHECK_EQ(runtime->GetId(), request.runtime_id, base::NotFatalUntil::M159);
 
+  if (request.options->is_ua_immersive_media) {
+    // Browser-owned immersive media is initiated by Chromium itself after the
+    // user enters fullscreen spatial video. It is not a page WebXR request and
+    // should not be blocked on the origin's VR permission. Keep feature-level
+    // permissions intact so future UA media sessions still require consent for
+    // sensitive capabilities such as camera or hand tracking.
+    LOG(ERROR) << "XRDBG immersive-media: bypassing origin VR permission for "
+                  "UA-owned immersive media session";
+
+    const std::vector<blink::PermissionType> permissions_for_features =
+        GetRequiredPermissionsForFeatures(request.required_features,
+                                          request.optional_features);
+    auto result_callback =
+        base::BindOnce(&VRServiceImpl::OnPermissionResultsForFeatures,
+                       weak_ptr_factory_.GetWeakPtr(), std::move(request),
+                       permissions_for_features);
+    if (permissions_for_features.empty()) {
+      std::move(result_callback).Run({}, /*needs_prompt=*/false);
+    } else {
+      DoRequestPermissions(permissions_for_features, std::move(result_callback));
+    }
+    return;
+  }
+
   // Need to calculate the permissions before the call below, as otherwise
   // std::move nulls options out before `GetRequiredPermissions()` runs.
   const std::vector<blink::PermissionType> permissions_for_mode =
