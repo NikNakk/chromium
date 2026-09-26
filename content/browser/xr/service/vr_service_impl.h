@@ -98,7 +98,6 @@ class CONTENT_EXPORT VRServiceImpl : public device::mojom::VRService,
     std::unordered_set<device::mojom::XRSessionFeature> optional_features;
     device::mojom::XRSessionOptionsPtr options;
     device::mojom::XRDeviceId runtime_id;
-    bool openxr_handoff_prepared = false;
 
     SessionRequestData(
         device::mojom::XRSessionOptionsPtr options,
@@ -174,11 +173,6 @@ class CONTENT_EXPORT VRServiceImpl : public device::mojom::VRService,
 
   void DoRequestSession(SessionRequestData request);
 
-#if BUILDFLAG(IS_MAC)
-  void OnSwiftXrShellPrepared(SessionRequestData request, bool cooperative);
-  void ResumeSwiftXrShellIfNeeded();
-#endif
-
   void OnInlineSessionCreated(
       SessionRequestData request,
       device::mojom::XRRuntimeSessionResultPtr session_result);
@@ -215,10 +209,6 @@ class CONTENT_EXPORT VRServiceImpl : public device::mojom::VRService,
   bool frames_throttled_ = false;
   bool has_immersive_session_ = false;
   bool pending_device_changed_ = false;
-
-#if BUILDFLAG(IS_MAC)
-  bool swiftxr_shell_cooperative_handoff_ = false;
-#endif
 
   std::vector<XrCompatibleCallback> xr_compatible_callbacks_;
 
