@@ -212,6 +212,11 @@ class OpenXrGraphicsBinding {
   void UpdateProjectionLayerActiveSwapchainImageSize(
       gpu::SharedImageInterface* sii);
 
+  // Returns whether the base projection swapchain has an image that can be
+  // submitted to xrEndFrame, either because this frame rendered one or because
+  // a previously released image is still available for sparse-frame reuse.
+  bool CanSubmitBaseLayer() const;
+
   // Build XR projection views for the base layer.
   std::vector<XrCompositionLayerProjectionView> GetBaseLayerProjectionViews(
       const OpenXrViewConfiguration& view_config) const;
