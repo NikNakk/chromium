@@ -173,14 +173,17 @@ namespace content {
 VRServiceImpl::SessionRequestData::SessionRequestData(
     device::mojom::XRSessionOptionsPtr options,
     device::mojom::VRService::RequestSessionCallback callback,
-    device::mojom::XRDeviceId runtime_id)
+    device::mojom::XRDeviceId runtime_id,
+    bool browser_validated_ua_immersive_media)
     : callback(std::move(callback)),
       required_features(options->required_features.begin(),
                         options->required_features.end()),
       optional_features(options->optional_features.begin(),
                         options->optional_features.end()),
       options(std::move(options)),
-      runtime_id(runtime_id) {}
+      runtime_id(runtime_id),
+      browser_validated_ua_immersive_media(
+          browser_validated_ua_immersive_media) {}
 
 VRServiceImpl::SessionRequestData::~SessionRequestData() {
   // In some cases, we may get dropped before the VRService pipe is closed. In
@@ -558,9 +561,21 @@ void VRServiceImpl::RequestSession(
     return;
   }
 
+  const bool browser_validated_ua_immersive_media =
+      options->is_ua_immersive_media && GetWebContents()->IsFullscreen() &&
+      GetWebContents()->HasActiveEffectivelyFullscreenVideo();
+
+  if (options->is_ua_immersive_media &&
+      !browser_validated_ua_immersive_media) {
+    DVLOG(1) << __func__
+             << ": renderer requested UA immersive media without a "
+                "browser-observed fullscreen video; treating as an ordinary "
+                "WebXR request";
+  }
+
   const bool has_user_activation =
       render_frame_host_->HasTransientUserActivation();
-  if (!has_user_activation && !options->is_ua_immersive_media) {
+  if (!has_user_activation && !browser_validated_ua_immersive_media) {
     // User activation is verified blink-side, so this should never fail
     // (everything that happens up to this point should not take enough time for
     // the user activation to expire). Treat lack of user activation as unknown
@@ -589,8 +604,9 @@ void VRServiceImpl::RequestSession(
     return !runtime->SupportsFeature(feature);
   });
 
-  SessionRequestData request(std::move(options), std::move(callback),
-                             runtime->GetId());
+  SessionRequestData request(
+      std::move(options), std::move(callback), runtime->GetId(),
+      browser_validated_ua_immersive_media);
 
   GetPermissionStatus(std::move(request), runtime);
 }
@@ -657,12 +673,12 @@ void VRServiceImpl::GetPermissionStatus(SessionRequestData request,
   CHECK(runtime, base::NotFatalUntil::M159);
   CHECK_EQ(runtime->GetId(), request.runtime_id, base::NotFatalUntil::M159);
 
-  if (request.options->is_ua_immersive_media) {
-    // Browser-owned immersive media is initiated by Chromium itself after the
-    // user enters fullscreen spatial video. It is not a page WebXR request and
-    // should not be blocked on the origin's VR permission. Keep feature-level
-    // permissions intact so future UA media sessions still require consent for
-    // sensitive capabilities such as camera or hand tracking.
+  if (request.browser_validated_ua_immersive_media) {
+    // The renderer may request the UA immersive-media path, but only this
+    // browser-validated state is authoritative. It requires a browser-observed
+    // fullscreen video, so a compromised renderer cannot use the request bit
+    // alone to bypass activation or the origin's VR permission. Keep
+    // feature-level permissions intact for sensitive capabilities.
     LOG(ERROR) << "XRDBG immersive-media: bypassing origin VR permission for "
                   "UA-owned immersive media session";
 

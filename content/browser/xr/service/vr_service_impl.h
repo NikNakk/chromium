@@ -98,11 +98,16 @@ class CONTENT_EXPORT VRServiceImpl : public device::mojom::VRService,
     std::unordered_set<device::mojom::XRSessionFeature> optional_features;
     device::mojom::XRSessionOptionsPtr options;
     device::mojom::XRDeviceId runtime_id;
+    // Browser-validated UA-owned immersive media state. The corresponding
+    // renderer-provided option is only a request hint and is never trusted on
+    // its own for permission or activation bypasses.
+    bool browser_validated_ua_immersive_media = false;
 
     SessionRequestData(
         device::mojom::XRSessionOptionsPtr options,
         device::mojom::VRService::RequestSessionCallback callback,
-        device::mojom::XRDeviceId runtime_id);
+        device::mojom::XRDeviceId runtime_id,
+        bool browser_validated_ua_immersive_media);
     ~SessionRequestData();
     SessionRequestData(SessionRequestData&&);
 
