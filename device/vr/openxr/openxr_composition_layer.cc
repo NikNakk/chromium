@@ -127,9 +127,10 @@ void OpenXrCompositionLayer::DestroySwapchain(gpu::SharedImageInterface* sii) {
   // In case we still hold an active swapchain image.
   ReleaseActiveSwapchainImage();
 
-  // Reset rendered state.
+  // Reset rendered/submission state.
   needs_redraw_ = false;
   is_rendered_ = false;
+  has_last_released_swapchain_image_ = false;
 
   // As long as we have a context provider we need to destroy any SharedImages
   // that may exist.
@@ -208,11 +209,18 @@ XrResult OpenXrCompositionLayer::ReleaseActiveSwapchainImage() {
 
   swapchain_image_state_ = SwapchainImageState::kReleased;
 
-  // Since `active_swapchain_index_` is a unit32_t there's not a good "invalid"
-  // number to set; so just leave it alone after clearing it.
+  // Since `active_swapchain_index_` is a uint32_t there's not a good "invalid"
+  // number to set; retain it so sparse-frame handling can tell whether the
+  // runtime handed us the same image that was most recently released.
+  const uint32_t released_index = active_swapchain_index_;
   XrSwapchainImageReleaseInfo release_info = {
       XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
-  return xrReleaseSwapchainImage(color_swapchain_, &release_info);
+  XrResult result = xrReleaseSwapchainImage(color_swapchain_, &release_info);
+  if (XR_SUCCEEDED(result)) {
+    has_last_released_swapchain_image_ = true;
+    last_released_swapchain_index_ = released_index;
+  }
+  return result;
 }
 
 OpenXrSwapchainInfo* OpenXrCompositionLayer::GetActiveSwapchainImage() {
