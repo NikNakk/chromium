@@ -209,7 +209,11 @@ void OpenXrGraphicsBindingMetal::OnSwapchainImageReady(
     gpu::SharedImageInterface* sii) {}
 
 bool OpenXrGraphicsBindingMetal::SupportsLayers() const {
-  return false;
+  // The direct Metal SharedImage path can expose ordinary 2D OpenXR
+  // composition-layer swapchains to Blink without an intermediate copy.
+  // Projection, quad, cylinder and equirect layers all use 2D color
+  // swapchains and can share the same transport as the base projection layer.
+  return true;
 }
 
 void OpenXrGraphicsBindingMetal::ResizeSharedBuffer(
