@@ -142,6 +142,18 @@ OpenXrGraphicsBinding::GetProjectionViews(
   std::vector<XrCompositionLayerProjectionView> projection_views;
   projection_views.resize(view_config.Views().size());
 
+#if BUILDFLAG(IS_MAC)
+  // The macOS direct-Metal path exposes custom projection-layer swapchain
+  // textures directly to Blink. Unlike the base layer, a WebXR projection
+  // layer may request a scaled texture, so its OpenXR imageRect must match the
+  // layer's own texture dimensions rather than the headset-recommended base
+  // view dimensions.
+  const bool use_layer_viewports =
+      RequiresSharedImages() && layer.GetLayerId() != kInvalidLayerId;
+#else
+  constexpr bool use_layer_viewports = false;
+#endif
+
   uint32_t x_offset = view_config.Viewport().x();
   for (uint32_t view_index = 0; view_index < view_config.Views().size();
        view_index++) {
@@ -161,13 +173,26 @@ OpenXrGraphicsBinding::GetProjectionViews(
     // and is always index 0. If secondary views are enabled, those views are
     // also in this same texture array.
     projection_view.subImage.imageArrayIndex = 0;
-    projection_view.subImage.imageRect.extent.width = properties.Width();
-    projection_view.subImage.imageRect.extent.height = properties.Height();
-    projection_view.subImage.imageRect.offset.x = x_offset;
-    x_offset += properties.Width();
 
-    projection_view.subImage.imageRect.offset.y =
-        layer.GetSwapchainImageSize().height() - properties.Height();
+    if (use_layer_viewports) {
+      const XrEyeVisibility eye =
+          view_index == 0 ? XR_EYE_VISIBILITY_LEFT : XR_EYE_VISIBILITY_RIGHT;
+      const gfx::Rect viewport = layer.GetSubImageViewport(eye);
+      projection_view.subImage.imageRect.extent.width = viewport.width();
+      projection_view.subImage.imageRect.extent.height = viewport.height();
+      projection_view.subImage.imageRect.offset.x = viewport.x();
+      projection_view.subImage.imageRect.offset.y =
+          layer.GetSwapchainImageSize().height() -
+          (viewport.y() + viewport.height());
+    } else {
+      projection_view.subImage.imageRect.extent.width = properties.Width();
+      projection_view.subImage.imageRect.extent.height = properties.Height();
+      projection_view.subImage.imageRect.offset.x = x_offset;
+      x_offset += properties.Width();
+      projection_view.subImage.imageRect.offset.y =
+          layer.GetSwapchainImageSize().height() - properties.Height();
+    }
+
     projection_view.fov.angleUp = view.fov.angleUp;
     projection_view.fov.angleDown = view.fov.angleDown;
 
@@ -287,7 +312,16 @@ gfx::Size OpenXrGraphicsBinding::GetProjectionLayerSwapchainImageSize() {
 void OpenXrGraphicsBinding::SetProjectionLayerSwapchainImageSize(
     const gfx::Size& swapchain_image_size) {
   base_layer_->SetSwapchainImageSize(swapchain_image_size);
-  // All projection layers should have the same size.
+#if BUILDFLAG(IS_MAC)
+  // Direct Metal projection layers use their WebXR-requested texture size so
+  // Blink can render straight into the runtime texture without an intermediate
+  // resize/copy. Do not overwrite those custom sizes with the base-layer size.
+  if (RequiresSharedImages()) {
+    return;
+  }
+#endif
+  // Other bindings use the base projection size and may resize/copy their
+  // transfer buffers independently.
   for (auto& [_, layer] : layers_) {
     if (layer->type() == OpenXrCompositionLayer::Type::kProjection) {
       layer->SetSwapchainImageSize(swapchain_image_size);
@@ -304,7 +338,12 @@ void OpenXrGraphicsBinding::SetProjectionLayerTransferSize(
     const gfx::Size& transfer_size) {
   CHECK(base_layer_);
   base_layer_->SetTransferSize(transfer_size);
-  // All projection layers should have the same size.
+#if BUILDFLAG(IS_MAC)
+  // Custom direct-Metal projection layers own their transfer dimensions.
+  if (RequiresSharedImages()) {
+    return;
+  }
+#endif
   for (auto& [_, layer] : layers_) {
     if (layer->type() == OpenXrCompositionLayer::Type::kProjection) {
       layer->SetTransferSize(transfer_size);
@@ -584,8 +623,26 @@ bool OpenXrGraphicsBinding::CreateCompositionLayer(
       std::move(layer_data), this, CreateLayerGraphicsBindingData());
 
   if (new_layer->type() == OpenXrCompositionLayer::Type::kProjection) {
-    // All projection layers should have same size.
+#if BUILDFLAG(IS_MAC)
+    if (RequiresSharedImages()) {
+      // The direct Metal path has no intermediate resize/blit. Match the
+      // OpenXR swapchain itself to the texture Blink exposes for this WebXR
+      // projection layer; otherwise color/depth attachments can have different
+      // sizes and WebGL resolves fail with GL_INVALID_FRAMEBUFFER_OPERATION.
+      const gfx::Size layer_size(new_layer->read_only_data().texture_width,
+                                 new_layer->read_only_data().texture_height);
+      DVLOG(1) << __func__ << ": direct Metal projection layer size "
+               << layer_size.ToString() << " (base "
+               << GetProjectionLayerSwapchainImageSize().ToString() << ")";
+      new_layer->SetSwapchainImageSize(layer_size);
+    } else {
+      new_layer->SetSwapchainImageSize(GetProjectionLayerSwapchainImageSize());
+    }
+#else
+    // Other bindings composite/resize projection-layer content into the base
+    // runtime swapchain size.
     new_layer->SetSwapchainImageSize(GetProjectionLayerSwapchainImageSize());
+#endif
   }
 
   layers_.emplace(layer_id, std::move(new_layer));
