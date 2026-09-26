@@ -55,8 +55,8 @@ std::string GetSandboxProfile(sandbox::mojom::Sandbox sandbox_type) {
   // the same OS-facing GPU allowances as Chromium's GPU process, in addition
   // to the XR-specific Monado runtime/IPC permissions.
   if (sandbox_type == sandbox::mojom::Sandbox::kXrCompositing) {
-    return kSeatbeltPolicyString_common + kSeatbeltPolicyString_gpu +
-           kSeatbeltPolicyString_xr_compositing;
+    return std::string(kSeatbeltPolicyString_common) +
+           kSeatbeltPolicyString_gpu + kSeatbeltPolicyString_xr_compositing;
   }
 
   std::string profile_suffix = [](sandbox::mojom::Sandbox sandbox_type) {
@@ -94,6 +94,9 @@ std::string GetSandboxProfile(sandbox::mojom::Sandbox sandbox_type) {
         return kSeatbeltPolicyString_utility;
       case sandbox::mojom::Sandbox::kRenderer:
         return kSeatbeltPolicyString_renderer;
+      case sandbox::mojom::Sandbox::kXrCompositing:
+        // Handled above so the XR profile can compose GPU + XR policies.
+        NOTREACHED();
       case sandbox::mojom::Sandbox::kNoSandbox:
         NOTREACHED();
     }
