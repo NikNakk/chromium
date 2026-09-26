@@ -128,6 +128,9 @@ class XRWebGLSharedImageSwapChain final : public XRWebGLSwapChain {
 
   gpu::SyncToken GetSyncToken() const override { return sync_token_; }
 
+ protected:
+  void OnTextureQueried() override;
+
  private:
   std::unique_ptr<gpu::SharedImageTexture> shared_image_texture_;
   std::unique_ptr<gpu::SharedImageTexture::ScopedAccess>
