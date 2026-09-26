@@ -51,6 +51,14 @@ base::FilePath GetCanonicalPath(const base::FilePath& path) {
 }
 
 std::string GetSandboxProfile(sandbox::mojom::Sandbox sandbox_type) {
+  // The macOS OpenXR service owns the native Metal graphics binding and needs
+  // the same OS-facing GPU allowances as Chromium's GPU process, in addition
+  // to the XR-specific Monado runtime/IPC permissions.
+  if (sandbox_type == sandbox::mojom::Sandbox::kXrCompositing) {
+    return kSeatbeltPolicyString_common + kSeatbeltPolicyString_gpu +
+           kSeatbeltPolicyString_xr_compositing;
+  }
+
   std::string profile_suffix = [](sandbox::mojom::Sandbox sandbox_type) {
     switch (sandbox_type) {
       case sandbox::mojom::Sandbox::kAudio:
@@ -79,8 +87,6 @@ std::string GetSandboxProfile(sandbox::mojom::Sandbox sandbox_type) {
         return kSeatbeltPolicyString_proxy_resolver;
       case sandbox::mojom::Sandbox::kWebNNModelCompilation:
         return kSeatbeltPolicyString_webnn_model_compilation;
-      case sandbox::mojom::Sandbox::kXrCompositing:
-        return kSeatbeltPolicyString_xr_compositing;
       // `kService` and `kUtility` are the same on OS_MAC, so fallthrough.
       case sandbox::mojom::Sandbox::kService:
       case sandbox::mojom::Sandbox::kServiceWithJit:
