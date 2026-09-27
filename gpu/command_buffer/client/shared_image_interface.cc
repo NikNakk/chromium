@@ -186,8 +186,8 @@ void SharedImageInterface::SignalSyncToken(std::vector<SyncToken> sync_tokens,
 #if BUILDFLAG(IS_MAC)
 void SharedImageInterface::SignalSyncTokenAndWaitForMetalSharedEvents(
     std::vector<SyncToken> sync_tokens,
-    std::vector<Mailbox> mailboxes,
-    int32_t frame_index,
+    std::vector<Mailbox> /*mailboxes*/,
+    int32_t /*frame_index*/,
     base::OnceClosure callback) {
   // Non-GPU-backed/test implementations keep the old semantics.
   SignalSyncToken(std::move(sync_tokens), std::move(callback));
