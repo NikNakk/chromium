@@ -35,6 +35,7 @@
 #include <optional>
 
 #include "base/format_macros.h"
+#include "base/logging.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
 #include "third_party/blink/renderer/bindings/core/v8/js_based_event_listener.h"
