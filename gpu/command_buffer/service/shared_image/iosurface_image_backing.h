@@ -210,7 +210,8 @@ class GPU_GLES2_EXPORT IOSurfaceImageBacking
 #if BUILDFLAG(IS_MAC)
   // Returns a retained snapshot of the Metal completion events recorded for
   // the most recent exclusive (write) access to this IOSurface.
-  std::vector<gfx::MTLSharedEventFence> GetExclusiveSharedEventFences();
+  std::vector<gfx::MTLSharedEventFence>
+  GetExclusiveSharedEventFences() override;
 #endif
 
   std::unique_ptr<GLTextureImageRepresentation> ProduceGLTexture(
