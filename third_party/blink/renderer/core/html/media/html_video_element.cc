@@ -1215,11 +1215,9 @@ void HTMLVideoElement::SetLegacyVrPresentationActive(bool active) {
   if (active) {
     // videojs-vr hides the HTMLVideoElement and presents a generated WebGL
     // canvas. Keep the decoded video as the source and bypass that canvas.
-    if (has_received_first_frame_ &&
-        !PictureInPictureController::IsElementInPictureInPicture(this)) {
-      PictureInPictureController::From(GetDocument())
-          .EnterPictureInPictureImmersive(*this);
-    }
+    // MaybeEnterImmersivePictureInPicture() also handles activation before the
+    // first decoded frame arrives.
+    MaybeEnterImmersivePictureInPicture();
   } else {
     PictureInPictureController::From(GetDocument())
         .ExitPictureInPictureImmersive(*this);
@@ -1230,7 +1228,8 @@ void HTMLVideoElement::SetLegacyVrPresentationActive(bool active) {
 }
 
 void HTMLVideoElement::MaybeEnterImmersivePictureInPicture() {
-  if (!is_effectively_fullscreen_ || !has_received_first_frame_) {
+  if ((!is_effectively_fullscreen_ && !legacy_vr_presentation_active_) ||
+      !has_received_first_frame_) {
     return;
   }
   if (GetDocument().GetSettings() &&
