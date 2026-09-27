@@ -311,6 +311,19 @@ The old SwiftXR Shell localhost handoff is no longer part of Chromium's generic
 session-creation code. Presentation ownership/yielding belongs in the runtime
 or shell layer.
 
+For spatial video without usable container metadata, a page or extension may
+annotate the underlying `HTMLVideoElement` before requesting fullscreen:
+
+```html
+<video data-xr-projection="360">
+```
+
+The attribute is deliberately generic and does not identify any player or site.
+Supported values are `360`, `360_LR`, `360_TB`, `180_MONO`, `180`,
+`180_LR`, `EAC`, and `EAC_LR`. Real container projection metadata still
+takes precedence. The hint only affects the existing browser-owned immersive
+video path; it does not itself bypass fullscreen/session validation.
+
 ## WebGL and WebGPU
 
 The working path is WebGL/ANGLE.
