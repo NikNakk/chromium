@@ -10,6 +10,7 @@
 #include <array>
 #include <cmath>
 #include <map>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -467,7 +468,7 @@ fragment float4 xr_eac_fragment(
     data.mesh_initialized = true;
 
     const auto& projection_data = layer.read_only_data().media_projection_data;
-    auto meshes = ParseSphericalVideoMesh(base::span(projection_data));
+    auto meshes = ParseSphericalVideoMesh(base::span<const uint8_t>(projection_data));
     if (!meshes || meshes->size() != 1) {
       DLOG(ERROR) << "Failed to parse supported single-view spherical mesh";
       return false;
@@ -704,7 +705,8 @@ bool OpenXrGraphicsBindingMetal::RenderLayer(
     MTLRenderPassDescriptor* pass =
         [MTLRenderPassDescriptor renderPassDescriptor];
     pass.colorAttachments[0].texture = runtime_texture;
-    pass.colorAttachments[0].loadAction = MTLLoadActionDontCare;
+    pass.colorAttachments[0].loadAction = MTLLoadActionClear;
+    pass.colorAttachments[0].clearColor = MTLClearColorMake(0.0, 0.0, 0.0, 1.0);
     pass.colorAttachments[0].storeAction = MTLStoreActionStore;
 
     id<MTLRenderCommandEncoder> encoder =
