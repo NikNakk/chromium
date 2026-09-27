@@ -7,6 +7,8 @@
 #include "device/vr/openxr/mac/openxr_graphics_binding_metal.h"
 
 #include <algorithm>
+#include <array>
+#include <cmath>
 #include <map>
 #include <utility>
 #include <vector>
@@ -17,6 +19,7 @@
 #include "components/viz/common/resources/shared_image_format.h"
 #include "device/vr/openxr/openxr_composition_layer.h"
 #include "device/vr/openxr/openxr_platform.h"
+#include "device/vr/openxr/spherical_video_mesh_parser.h"
 #include "device/vr/openxr/openxr_swapchain_info.h"
 #include "device/vr/openxr/openxr_util.h"
 #include "gpu/command_buffer/client/client_shared_image.h"
@@ -37,6 +40,114 @@ constexpr MTLPixelFormat kSupportedFormats[] = {
     MTLPixelFormatBGRA8Unorm_sRGB,
     MTLPixelFormatBGRA8Unorm,
 };
+
+constexpr double kPi = 3.14159265358979323846;
+constexpr size_t kMaxMeshRenderVertices = 1000000;
+
+struct MeshRenderVertex {
+  float position_x;
+  float position_y;
+  float texcoord_u;
+  float texcoord_v;
+};
+
+struct MetalLayerData : public OpenXrCompositionLayer::GraphicsBindingData {
+  MetalLayerData() { type = kMetal; }
+
+  bool mesh_initialized = false;
+  id<MTLBuffer> __strong mesh_vertex_buffer = nil;
+  NSUInteger mesh_vertex_count = 0;
+};
+
+MetalLayerData& GetMetalLayerData(OpenXrCompositionLayer& layer) {
+  auto* data = static_cast<MetalLayerData*>(layer.graphics_binding_data());
+  CHECK(data);
+  CHECK(data->type == OpenXrCompositionLayer::GraphicsBindingData::kMetal);
+  return *data;
+}
+
+bool AppendMeshTriangle(
+    const SphericalVideoMesh& mesh,
+    const std::array<uint32_t, 3>& indices,
+    std::vector<MeshRenderVertex>* output) {
+  std::array<double, 3> destination_u;
+  std::array<double, 3> destination_y;
+  for (size_t i = 0; i < indices.size(); ++i) {
+    if (indices[i] >= mesh.vertices.size()) {
+      return false;
+    }
+    const auto& vertex = mesh.vertices[indices[i]];
+    const double length =
+        std::sqrt(static_cast<double>(vertex.x) * vertex.x +
+                  static_cast<double>(vertex.y) * vertex.y +
+                  static_cast<double>(vertex.z) * vertex.z);
+    if (!(length > 0.0)) {
+      return false;
+    }
+    const double longitude = std::atan2(vertex.x, -vertex.z);
+    const double normalized_y =
+        std::clamp(static_cast<double>(vertex.y) / length, -1.0, 1.0);
+    const double latitude = std::asin(normalized_y);
+    destination_u[i] = 0.5 + longitude / (2.0 * kPi);
+    destination_y[i] = 2.0 * latitude / kPi;
+  }
+
+  const auto [min_u, max_u] =
+      std::minmax_element(destination_u.begin(), destination_u.end());
+  const bool crosses_seam = *max_u - *min_u > 0.5;
+  if (crosses_seam) {
+    for (double& u : destination_u) {
+      if (u < 0.5) {
+        u += 1.0;
+      }
+    }
+  }
+
+  auto append_copy = [&](double u_offset) {
+    if (output->size() > kMaxMeshRenderVertices - 3) {
+      return false;
+    }
+    for (size_t i = 0; i < indices.size(); ++i) {
+      const auto& vertex = mesh.vertices[indices[i]];
+      const double u = destination_u[i] + u_offset;
+      output->push_back(
+          {static_cast<float>(2.0 * u - 1.0),
+           static_cast<float>(destination_y[i]), vertex.u, vertex.v});
+    }
+    return true;
+  };
+
+  if (!append_copy(0.0)) {
+    return false;
+  }
+  // A triangle spanning the +/-pi longitude seam must be rasterized on both
+  // clipped sides of the equirectangular target.
+  if (crosses_seam && !append_copy(-1.0)) {
+    return false;
+  }
+  return true;
+}
+
+std::optional<std::vector<MeshRenderVertex>> BuildMeshRenderVertices(
+    const SphericalVideoMesh& mesh) {
+  if (mesh.triangle_indices.size() % 3 != 0) {
+    return std::nullopt;
+  }
+
+  std::vector<MeshRenderVertex> output;
+  output.reserve(std::min(kMaxMeshRenderVertices,
+                          mesh.triangle_indices.size() * 2));
+  for (size_t i = 0; i < mesh.triangle_indices.size(); i += 3) {
+    if (!AppendMeshTriangle(
+            mesh,
+            {mesh.triangle_indices[i], mesh.triangle_indices[i + 1],
+             mesh.triangle_indices[i + 2]},
+            &output)) {
+      return std::nullopt;
+    }
+  }
+  return output;
+}
 
 id<MTLTexture> CreateIOSurfaceMetalTexture(id<MTLDevice> device,
                                            IOSurfaceRef io_surface,
