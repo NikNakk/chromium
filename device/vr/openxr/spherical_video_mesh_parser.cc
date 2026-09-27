@@ -13,6 +13,8 @@
 #include <utility>
 #include <vector>
 
+#include "base/memory/raw_span.h"
+#include "base/numerics/byte_conversions.h"
 #include "third_party/zlib/zlib.h"
 
 namespace device {
@@ -38,11 +40,7 @@ class ByteReader {
     if (remaining().size() < 4) {
       return false;
     }
-    const uint8_t* p = remaining().data();
-    *value = (static_cast<uint32_t>(p[0]) << 24) |
-             (static_cast<uint32_t>(p[1]) << 16) |
-             (static_cast<uint32_t>(p[2]) << 8) |
-             static_cast<uint32_t>(p[3]);
+    *value = base::U32FromBigEndian(remaining().first<4>());
     position_ += 4;
     return true;
   }
@@ -70,7 +68,7 @@ class ByteReader {
   }
 
  private:
-  base::span<const uint8_t> data_;
+  base::raw_span<const uint8_t> data_;
   size_t position_ = 0;
 };
 
@@ -98,7 +96,7 @@ class BitReader {
   }
 
  private:
-  base::span<const uint8_t> data_;
+  base::raw_span<const uint8_t> data_;
   size_t bit_position_ = 0;
 };
 
