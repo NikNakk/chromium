@@ -242,6 +242,39 @@ For spatial video, equirectangular 180/360 metadata uses the direct equirect
 layer path. YouTube EAC compatibility currently uses a Metal EAC-to-equirect
 GPU reprojection before submission.
 
+The current EAC compatibility detection is deliberately temporary. WebM
+Spherical Video V2 streams can carry `ProjectionType = 3` (Mesh) plus a
+`ProjectionPrivate` payload containing the projection mesh. That mesh is the
+generic, stream-authored description of the mapping and is sufficient to render
+YouTube-style EAC without a YouTube DOM heuristic. Chromium's current
+`WebMProjectionParser` validates Mesh/Cubemap private data but maps both to
+`VideoProjectionType::kNone`, so the payload is discarded before Blink sees
+it. A generic follow-up should preserve the mesh payload in the media spatial
+format and render the mesh (or use it to generate an equirectangular
+intermediate) rather than introduce an EAC-specific container flag.
+
+## Feature rollout
+
+The macOS OpenXR backend is compiled when `enable_openxr` is true, but follows
+Chromium's existing `OpenXR` feature and remains disabled by default on macOS.
+Enable ordinary WebXR/OpenXR with:
+
+```sh
+--enable-features=OpenXR
+```
+
+Browser-owned immersive video is a separate behaviour change and is guarded by
+the disabled-by-default `ImmersiveVideoPlaybackViaOpenXr` feature. Enable both
+when testing fullscreen spatial-video handoff:
+
+```sh
+--enable-features=OpenXR,ImmersiveVideoPlaybackViaOpenXr
+```
+
+Keeping these separate makes the macOS OpenXR runtime/backend independently
+upstreamable without automatically changing ordinary fullscreen `<video>`
+behaviour.
+
 ## Browser-owned immersive media
 
 The browser-native immersive-media path is implemented on top of normal
@@ -315,6 +348,7 @@ XR_RUNTIME_JSON=/path/to/openxr_monado.json \
 out/mac-webxr/Chromium.app/Contents/MacOS/Chromium \
   --user-data-dir=/tmp/chromium-webxr \
   --force-webxr-runtime=openxr \
+  --enable-features=OpenXR \
   --no-first-run
 ```
 
