@@ -244,9 +244,7 @@ class GPU_GLES2_EXPORT SharedImageBacking {
   // exclusive consumer can safely use this backing. Backings without Metal
   // shared-event synchronization return an empty vector.
   virtual std::vector<gfx::MTLSharedEventFence>
-  GetExclusiveSharedEventFences() {
-    return {};
-  }
+  GetExclusiveSharedEventFences();
 #endif
 
   // Called when secondary reference is added to the SharedImage. Used by
