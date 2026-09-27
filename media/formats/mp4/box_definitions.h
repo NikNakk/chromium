@@ -358,9 +358,15 @@ struct MEDIA_EXPORT Equirectangular : Box {
   uint32_t bounds_right = 0;
 };
 
+struct MEDIA_EXPORT MeshProjection : Box {
+  DECLARE_BOX_METHODS(MeshProjection);
+  std::vector<uint8_t> projection_data;
+};
+
 struct MEDIA_EXPORT Projection : Box {
   DECLARE_BOX_METHODS(Projection);
   VideoProjectionType type = VideoProjectionType::kNone;
+  std::vector<uint8_t> projection_data;
 };
 
 struct MEDIA_EXPORT SphericalVideo : Box {
