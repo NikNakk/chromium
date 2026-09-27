@@ -239,19 +239,24 @@ transport for projection, quad, cylinder, and equirect layers. Browser-native
 spatial video uses the same layer plumbing.
 
 For spatial video, equirectangular 180/360 metadata uses the direct equirect
-layer path. YouTube EAC compatibility currently uses a Metal EAC-to-equirect
-GPU reprojection before submission.
+layer path. Spherical Video V2 Mesh projection is also supported. Chromium
+preserves WebM `ProjectionType = 3` / `ProjectionPrivate` and MP4 `mshp`
+metadata in `VideoSpatialFormat`, carries it with the browser-owned XR media
+layer, and parses the mesh inside the isolated XR service.
 
-The current EAC compatibility detection is deliberately temporary. WebM
-Spherical Video V2 streams can carry `ProjectionType = 3` (Mesh) plus a
-`ProjectionPrivate` payload containing the projection mesh. That mesh is the
-generic, stream-authored description of the mapping and is sufficient to render
-YouTube-style EAC without a YouTube DOM heuristic. Chromium's current
-`WebMProjectionParser` validates Mesh/Cubemap private data but maps both to
-`VideoProjectionType::kNone`, so the payload is discarded before Blink sees
-it. A generic follow-up should preserve the mesh payload in the media spatial
-format and render the mesh (or use it to generate an equirectangular
-intermediate) rather than introduce an EAC-specific container flag.
+The mesh parser supports both `raw ` and raw-DEFLATE (`dfl8`) payloads,
+triangle lists/strips/fans, the legacy MP4 `ytmp` alias, and one- or two-mesh
+stereo metadata. The Metal binding converts the stream-authored 3D->UV mesh
+into a cached equirectangular render mesh once per XR layer and uses it to
+reproject each decoded frame before submission. Packed left-right/top-bottom
+stereo follows the RFC UV transforms; two-mesh custom stereo is normalized to
+a left-right equirectangular output layer.
+
+This stream-authored mesh path takes precedence over the older analytic
+YouTube EAC fallback. The site DOM heuristic and hard-coded EAC shader remain
+temporarily as compatibility fallback for streams where no projection metadata
+reaches Chromium; they can be removed once real-world YouTube testing confirms
+that current adaptive streams consistently expose their mesh metadata.
 
 ## Feature rollout
 
@@ -343,7 +348,9 @@ Implemented on this branch:
 - asynchronous renderer GPU completion using ANGLE Metal shared events;
 - projection and WebXR 2D composition layers;
 - browser-native equirectangular spatial-video playback;
-- YouTube EAC reprojection compatibility;
+- Spherical Video V2 stream-mesh reprojection for WebM and MP4, including
+  `raw `/`dfl8`, packed stereo, two-mesh custom stereo, and legacy `ytmp`;
+- YouTube EAC analytic reprojection as a metadata-missing compatibility fallback;
 - clean normal session exit/re-entry.
 
 Not yet implemented or intentionally out of scope:
