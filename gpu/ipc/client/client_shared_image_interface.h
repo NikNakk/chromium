@@ -132,6 +132,14 @@ class GPU_IPC_CLIENT_EXPORT ClientSharedImageInterface
   void SignalSyncToken(std::vector<SyncToken> sync_tokens,
                        base::OnceClosure callback) override;
 
+#if BUILDFLAG(IS_MAC)
+  void SignalSyncTokenAndWaitForMetalSharedEvents(
+      std::vector<SyncToken> sync_tokens,
+      std::vector<Mailbox> mailboxes,
+      int32_t frame_index,
+      base::OnceClosure callback) override;
+#endif
+
   gpu::GpuChannelHost* gpu_channel() { return gpu_channel_.get(); }
 
  protected:

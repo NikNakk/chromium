@@ -218,6 +218,13 @@ interface GpuChannel {
 
   // Signals the completion of an asynchronous wait for `sync_tokens`.
   SignalSyncToken(array<SyncToken> sync_tokens) => ();
+
+  // macOS WebXR: after the SyncTokens are satisfied, wait for the Metal
+  // shared-event fences recorded by the IOSurface SharedImage backings.
+  [EnableIf=is_mac]
+  SignalSyncTokenAndWaitForMetalSharedEvents(
+      array<SyncToken> sync_tokens, array<Mailbox> mailboxes,
+      int32 frame_index) => ();
 };
 
 // Interface used to issue commands to a specific CommandBuffer instance in the

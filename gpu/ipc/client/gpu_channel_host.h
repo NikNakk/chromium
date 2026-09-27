@@ -220,6 +220,14 @@ class GPU_IPC_CLIENT_EXPORT GpuChannelHost
   void SignalSyncToken(std::vector<SyncToken> sync_tokens,
                        base::OnceClosure callback);
 
+#if BUILDFLAG(IS_MAC)
+  void SignalSyncTokenAndWaitForMetalSharedEvents(
+      std::vector<SyncToken> sync_tokens,
+      std::vector<Mailbox> mailboxes,
+      int32_t frame_index,
+      base::OnceClosure callback);
+#endif
+
   // Crashes the GPU process. This functionality is added here because
   // of instability when creating a new tab just to navigate to
   // chrome://gpucrash . This only works when running tests and is

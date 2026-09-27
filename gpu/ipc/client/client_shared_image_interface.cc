@@ -374,4 +374,16 @@ void ClientSharedImageInterface::SignalSyncToken(
   proxy_->SignalSyncToken(std::move(sync_tokens), std::move(callback));
 }
 
+#if BUILDFLAG(IS_MAC)
+void ClientSharedImageInterface::SignalSyncTokenAndWaitForMetalSharedEvents(
+    std::vector<SyncToken> sync_tokens,
+    std::vector<Mailbox> mailboxes,
+    int32_t frame_index,
+    base::OnceClosure callback) {
+  gpu_channel_->SignalSyncTokenAndWaitForMetalSharedEvents(
+      std::move(sync_tokens), std::move(mailboxes), frame_index,
+      std::move(callback));
+}
+#endif
+
 }  // namespace gpu

@@ -331,6 +331,17 @@ class GPU_COMMAND_BUFFER_CLIENT_EXPORT SharedImageInterface
   virtual void SignalSyncToken(std::vector<SyncToken> sync_tokens,
                                base::OnceClosure callback);
 
+#if BUILDFLAG(IS_MAC)
+  // Waits for the SyncTokens to be scheduled by the GPU process, then waits
+  // asynchronously for the ANGLE/Metal write-completion events associated
+  // with |mailboxes| before invoking |callback|.
+  virtual void SignalSyncTokenAndWaitForMetalSharedEvents(
+      std::vector<SyncToken> sync_tokens,
+      std::vector<Mailbox> mailboxes,
+      int32_t frame_index,
+      base::OnceClosure callback);
+#endif
+
   // Informs that existing |mailbox| with the specified metadata can be passed
   // to DestroySharedImage().
   virtual scoped_refptr<ClientSharedImage> NotifyMailboxAdded(

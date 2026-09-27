@@ -276,6 +276,20 @@ void GpuChannelHost::SignalSyncToken(std::vector<SyncToken> sync_tokens,
   GetGpuChannel().SignalSyncToken(std::move(sync_tokens), std::move(callback));
 }
 
+#if BUILDFLAG(IS_MAC)
+void GpuChannelHost::SignalSyncTokenAndWaitForMetalSharedEvents(
+    std::vector<SyncToken> sync_tokens,
+    std::vector<Mailbox> mailboxes,
+    int32_t frame_index,
+    base::OnceClosure callback) {
+  AutoLock lock(deferred_message_lock_);
+  InternalFlush(UINT32_MAX);
+  GetGpuChannel().SignalSyncTokenAndWaitForMetalSharedEvents(
+      std::move(sync_tokens), std::move(mailboxes), frame_index,
+      std::move(callback));
+}
+#endif
+
 void GpuChannelHost::DelayedEnsureFlush(uint32_t deferred_message_id) {
   AutoLock lock(deferred_message_lock_);
   if (delayed_flush_deferred_message_id_) {
