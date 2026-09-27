@@ -31,7 +31,7 @@ void IsolatedVRDeviceProvider::OnDeviceAdded(
     mojo::PendingRemote<device::mojom::XRRuntime> device,
     device::mojom::XRDeviceDataPtr device_data,
     device::mojom::XRDeviceId device_id) {
-  LOG(ERROR) << "XRDBG: IsolatedVRDeviceProvider::OnDeviceAdded id="
+  DVLOG(1) << __func__ << " id="
              << static_cast<int>(device_id);
   client_->AddRuntime(device_id, std::move(device_data), std::move(device));
   active_device_ids_.insert(device_id);
@@ -43,7 +43,7 @@ void IsolatedVRDeviceProvider::OnDeviceRemoved(device::mojom::XRDeviceId id) {
 }
 
 void IsolatedVRDeviceProvider::OnServerError() {
-  LOG(ERROR) << "XRDBG: IsolatedVRDeviceProvider::OnServerError retry="
+  DVLOG(1) << __func__ << " retry="
              << retry_count_ << " initialized=" << initialized_;
   // An error occurred - any devices we have added are now disconnected and
   // should be removed.
@@ -69,7 +69,7 @@ void IsolatedVRDeviceProvider::OnServerError() {
 }
 
 void IsolatedVRDeviceProvider::OnDevicesEnumerated() {
-  LOG(ERROR) << "XRDBG: IsolatedVRDeviceProvider::OnDevicesEnumerated"
+  DVLOG(2) << __func__
              << " initialized=" << initialized_
              << " active_devices=" << active_device_ids_.size();
   if (!initialized_) {
@@ -85,7 +85,7 @@ void IsolatedVRDeviceProvider::OnDevicesEnumerated() {
 }
 
 void IsolatedVRDeviceProvider::SetupDeviceProvider() {
-  LOG(ERROR) << "XRDBG: IsolatedVRDeviceProvider::SetupDeviceProvider"
+  DVLOG(2) << __func__
              << " retry=" << retry_count_;
   GetXRDeviceService()->BindRuntimeProvider(
       device_provider_.BindNewPipeAndPassReceiver(),
