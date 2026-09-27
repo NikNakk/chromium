@@ -6,6 +6,7 @@
 #define MEDIA_BASE_VIDEO_SPATIAL_FORMAT_H_
 
 #include <string>
+#include <vector>
 
 #include "media/base/media_export.h"
 
@@ -35,13 +36,20 @@ enum class VideoProjectionType {
   kNone = 0,     // Standard flat video
   kEquirect180,  // 180-degree VR video
   kEquirect360,  // 360-degree VR video
-  kMaxValue = kEquirect360,
+  kMesh,          // Spherical Video V2 mesh projection
+  kMaxValue = kMesh,
 };
 
 // Represents the spatial format of a video track.
 struct MEDIA_EXPORT VideoSpatialFormat {
   VideoProjectionType projection_type = VideoProjectionType::kNone;
   VideoStereoMode stereo_mode = VideoStereoMode::kMono;
+
+  // Projection-specific container payload. For kMesh this is the Spherical
+  // Video V2 mshp payload (including FullBox version/flags, CRC and encoding
+  // FourCC, but excluding the outer box size/type for WebM ProjectionPrivate).
+  // Empty for projection types that do not require downstream private data.
+  std::vector<uint8_t> projection_data;
 
   bool operator==(const VideoSpatialFormat& other) const = default;
 
