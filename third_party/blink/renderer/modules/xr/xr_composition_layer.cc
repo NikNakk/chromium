@@ -121,6 +121,9 @@ XRCompositionLayer::CreateLayerData() const {
       drawing_context_->NeedsRasterAccess();
   layer_data->read_only_data->needs_eac_reprojection =
       drawing_context_->NeedsEacReprojection();
+  for (uint8_t byte : drawing_context_->MediaProjectionData()) {
+    layer_data->read_only_data->media_projection_data.push_back(byte);
+  }
   if (layout_ == V8XRLayerLayout::Enum::kStereo) {
     // We put the layers into a single texture. So the other side should treat
     // it as left-right. See XRWebGLTextureArraySwapChain.
