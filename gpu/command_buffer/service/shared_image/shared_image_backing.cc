@@ -126,6 +126,13 @@ void SharedImageBacking::CopyToGpuMemoryBufferAsync(
 
 void SharedImageBacking::Update(gfx::GpuFenceHandle in_fence) {}
 
+#if BUILDFLAG(IS_MAC)
+std::vector<gfx::MTLSharedEventFence>
+SharedImageBacking::GetExclusiveSharedEventFences() {
+  return {};
+}
+#endif
+
 bool SharedImageBacking::UploadFromMemory(
     const std::vector<SkPixmap>& pixmaps) {
   LOG(FATAL) << "Shared image debug info: " << debug_label()
