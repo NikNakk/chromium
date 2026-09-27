@@ -33,6 +33,7 @@
 #include "third_party/blink/renderer/platform/supplementable.h"
 #include "third_party/blink/renderer/platform/wtf/forward.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
+#include "ui/gfx/geometry/size.h"
 
 namespace blink {
 
@@ -433,6 +434,12 @@ class XRSystem final : public EventTarget,
       HTMLVideoElement* video,
       device::mojom::blink::RequestSessionResultPtr result);
 
+  XREquirectLayer* CreateImmersiveMediaLayer(XRSession* session,
+                                             HTMLVideoElement* video,
+                                             XRReferenceSpace* space);
+  void ScheduleImmersiveMediaLayerResize(gfx::Size decoded_size);
+  void ApplyImmersiveMediaLayerResize();
+
   void EnsureDevice();
 
   void AddedEventListener(const AtomicString& event_type,
@@ -490,6 +497,8 @@ class XRSystem final : public EventTarget,
   Member<XRSession> immersive_media_session_;
   Member<XRReferenceSpace> immersive_media_space_;
   Member<XREquirectLayer> immersive_media_layer_;
+  gfx::Size immersive_media_video_size_;
+  bool immersive_media_resize_task_pending_ = false;
   bool immersive_media_request_pending_ = false;
 
   HeapMojoRemote<device::mojom::blink::VRService> service_;

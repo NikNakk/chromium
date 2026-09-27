@@ -1160,9 +1160,113 @@ void XRSystem::EndImmersiveMediaSession(HTMLVideoElement* video) {
   immersive_media_layer_ = nullptr;
   immersive_media_space_ = nullptr;
   immersive_media_session_ = nullptr;
+  immersive_media_video_size_ = gfx::Size();
+  immersive_media_resize_task_pending_ = false;
 
   DVLOG(1) << "Ending internal immersive-media session";
   session->ForceEnd(XRSession::ShutdownPolicy::kWaitForResponse);
+}
+
+XREquirectLayer* XRSystem::CreateImmersiveMediaLayer(
+    XRSession* session,
+    HTMLVideoElement* video,
+    XRReferenceSpace* space) {
+  if (!session || !video || !space || !video->GetWebMediaPlayer()) {
+    return nullptr;
+  }
+
+  const ImmersiveMediaSpatialFormat immersive_format =
+      GetImmersiveMediaSpatialFormat(video);
+  const media::VideoSpatialFormat& spatial_format =
+      immersive_format.spatial_format;
+  if (spatial_format.projection_type == media::VideoProjectionType::kNone) {
+    return nullptr;
+  }
+
+  auto* drawing_context = MakeGarbageCollected<XRMediaDrawingContext>(
+      session, video, immersive_format.needs_eac_reprojection,
+      spatial_format.projection_data,
+      BindRepeating(&XRSystem::ScheduleImmersiveMediaLayerResize,
+                    WrapWeakPersistent(this)));
+
+  auto* init = XREquirectLayerInit::Create();
+  init->setSpace(space);
+  init->setViewPixelWidth(drawing_context->TextureWidth());
+  init->setViewPixelHeight(drawing_context->TextureHeight());
+
+  if (spatial_format.projection_type ==
+      media::VideoProjectionType::kEquirect180) {
+    init->setCentralHorizontalAngle(kPiFloat);
+  }
+
+  V8XRLayerLayout::Enum layout = V8XRLayerLayout::Enum::kMono;
+  switch (spatial_format.stereo_mode) {
+    case media::VideoStereoMode::kMono:
+      layout = V8XRLayerLayout::Enum::kMono;
+      break;
+    case media::VideoStereoMode::kSideBySideLeftFirst:
+      layout = V8XRLayerLayout::Enum::kStereoLeftRight;
+      break;
+    case media::VideoStereoMode::kTopBottomLeftFirst:
+      layout = V8XRLayerLayout::Enum::kStereoTopBottom;
+      break;
+    case media::VideoStereoMode::kStereoCustom:
+      layout = V8XRLayerLayout::Enum::kStereoLeftRight;
+      break;
+  }
+
+  return MakeGarbageCollected<XREquirectLayer>(
+      session, init, layout, /*binding=*/nullptr, drawing_context);
+}
+
+void XRSystem::ScheduleImmersiveMediaLayerResize(gfx::Size decoded_size) {
+  if (decoded_size.IsEmpty() || decoded_size == immersive_media_video_size_ ||
+      !immersive_media_session_ || !immersive_media_video_ ||
+      immersive_media_resize_task_pending_) {
+    return;
+  }
+
+  immersive_media_resize_task_pending_ = true;
+  GetExecutionContext()->GetTaskRunner(TaskType::kInternalDefault)->PostTask(
+      FROM_HERE,
+      BindOnce(&XRSystem::ApplyImmersiveMediaLayerResize,
+               WrapWeakPersistent(this)));
+}
+
+void XRSystem::ApplyImmersiveMediaLayerResize() {
+  immersive_media_resize_task_pending_ = false;
+
+  if (!immersive_media_session_ || !immersive_media_video_ ||
+      !immersive_media_space_ || !immersive_media_video_->GetWebMediaPlayer()) {
+    return;
+  }
+
+  const gfx::Size decoded_size(immersive_media_video_->videoWidth(),
+                               immersive_media_video_->videoHeight());
+  if (decoded_size.IsEmpty() || decoded_size == immersive_media_video_size_) {
+    return;
+  }
+
+  XREquirectLayer* old_layer = immersive_media_layer_.Get();
+  XREquirectLayer* new_layer = CreateImmersiveMediaLayer(
+      immersive_media_session_.Get(), immersive_media_video_.Get(),
+      immersive_media_space_.Get());
+  if (!new_layer) {
+    DVLOG(1) << "Unable to rebuild XR media layer for decoded size "
+             << decoded_size.ToString();
+    return;
+  }
+
+  immersive_media_video_size_ = decoded_size;
+  immersive_media_layer_ = new_layer;
+  immersive_media_session_->SetInternalCompositionLayer(new_layer);
+
+  if (old_layer) {
+    old_layer->DestroyBackend();
+  }
+
+  DVLOG(1) << "Recreated XR media layer for decoded size "
+           << decoded_size.ToString();
 }
 
 void XRSystem::OnImmersiveMediaSessionReturned(
@@ -1206,65 +1310,28 @@ void XRSystem::OnImmersiveMediaSessionReturned(
     return;
   }
 
-  const ImmersiveMediaSpatialFormat immersive_format =
-      GetImmersiveMediaSpatialFormat(video);
-  const media::VideoSpatialFormat& spatial_format =
-      immersive_format.spatial_format;
-  if (spatial_format.projection_type == media::VideoProjectionType::kNone) {
+  auto* space = MakeGarbageCollected<XRReferenceSpace>(
+      session, device::mojom::blink::XRReferenceSpaceType::kLocal);
+  XREquirectLayer* layer = CreateImmersiveMediaLayer(session, video, space);
+  if (!layer) {
     session->ForceEnd(XRSession::ShutdownPolicy::kWaitForResponse);
     immersive_media_video_ = nullptr;
     return;
   }
 
-  auto* space = MakeGarbageCollected<XRReferenceSpace>(
-      session, device::mojom::blink::XRReferenceSpaceType::kLocal);
-  auto* drawing_context = MakeGarbageCollected<XRMediaDrawingContext>(
-      session, video, immersive_format.needs_eac_reprojection,
-      spatial_format.projection_data);
-
-  auto* init = XREquirectLayerInit::Create();
-  init->setSpace(space);
-  init->setViewPixelWidth(drawing_context->TextureWidth());
-  init->setViewPixelHeight(drawing_context->TextureHeight());
-
-  if (spatial_format.projection_type ==
-      media::VideoProjectionType::kEquirect180) {
-    init->setCentralHorizontalAngle(kPiFloat);
-  }
-
-  V8XRLayerLayout::Enum layout = V8XRLayerLayout::Enum::kMono;
-  switch (spatial_format.stereo_mode) {
-    case media::VideoStereoMode::kMono:
-      layout = V8XRLayerLayout::Enum::kMono;
-      break;
-    case media::VideoStereoMode::kSideBySideLeftFirst:
-      layout = V8XRLayerLayout::Enum::kStereoLeftRight;
-      break;
-    case media::VideoStereoMode::kTopBottomLeftFirst:
-      layout = V8XRLayerLayout::Enum::kStereoTopBottom;
-      break;
-    case media::VideoStereoMode::kStereoCustom:
-      // Mesh-defined stereo has no intrinsic packed output layout. Reproject
-      // the two eye-specific meshes into a canonical left-right equirect layer
-      // before handing it to OpenXR.
-      layout = V8XRLayerLayout::Enum::kStereoLeftRight;
-      break;
-  }
-
-  auto* layer = MakeGarbageCollected<XREquirectLayer>(
-      session, init, layout, /*binding=*/nullptr, drawing_context);
-
   immersive_media_session_ = session;
   immersive_media_space_ = space;
   immersive_media_layer_ = layer;
+  immersive_media_video_size_ =
+      gfx::Size(video->videoWidth(), video->videoHeight());
 
   session->SetInternalCompositionLayer(layer);
   session->DispatchInitialEvents();
 
-  DVLOG(1) << "Native XR media layer active "
-             << spatial_format.ToString() << " texture="
-             << drawing_context->TextureWidth() << "x"
-             << drawing_context->TextureHeight();
+  DVLOG(1) << "Native XR media layer active decoded_size="
+           << immersive_media_video_size_.ToString()
+           << " texture=" << layer->textureWidth() << "x"
+           << layer->textureHeight();
 }
 
 void XRSystem::RequestImmersiveSession(PendingRequestSessionQuery* query,
@@ -1684,6 +1751,8 @@ void XRSystem::OnSessionEnded(XRSession* session) {
     immersive_media_space_ = nullptr;
     immersive_media_session_ = nullptr;
     immersive_media_video_ = nullptr;
+    immersive_media_video_size_ = gfx::Size();
+    immersive_media_resize_task_pending_ = false;
   }
 
   if (session->immersive()) {

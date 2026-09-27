@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <vector>
 
+#include "base/functional/callback.h"
 #include "gpu/command_buffer/common/sync_token.h"
 #include "third_party/blink/renderer/modules/xr/xr_layer_drawing_context.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
@@ -27,7 +28,8 @@ class XRMediaDrawingContext : public XRLayerDrawingContext {
       XRSession* session,
       HTMLVideoElement* video,
       bool needs_eac_reprojection = false,
-      std::vector<uint8_t> media_projection_data = {});
+      std::vector<uint8_t> media_projection_data = {},
+      base::RepeatingCallback<void(gfx::Size)> size_changed_callback = {});
   ~XRMediaDrawingContext() override;
 
   void OnFrameStart() override;
@@ -64,6 +66,9 @@ class XRMediaDrawingContext : public XRLayerDrawingContext {
   uint16_t width_ = 0;
   uint16_t height_ = 0;
   uint16_t max_texture_size_ = 2048;
+  gfx::Size source_video_size_;
+  gfx::Size last_reported_video_size_;
+  base::RepeatingCallback<void(gfx::Size)> size_changed_callback_;
   bool content_changed_ = false;
   bool needs_eac_reprojection_ = false;
   Vector<uint8_t> media_projection_data_;

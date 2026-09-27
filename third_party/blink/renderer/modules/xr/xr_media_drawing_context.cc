@@ -30,9 +30,11 @@ XRMediaDrawingContext::XRMediaDrawingContext(
     XRSession* session,
     HTMLVideoElement* video,
     bool needs_eac_reprojection,
-    std::vector<uint8_t> media_projection_data)
+    std::vector<uint8_t> media_projection_data,
+    base::RepeatingCallback<void(gfx::Size)> size_changed_callback)
     : session_(session),
       video_(video),
+      size_changed_callback_(std::move(size_changed_callback)),
       needs_eac_reprojection_(needs_eac_reprojection),
       media_projection_data_(
           base::span<const uint8_t>(media_projection_data)) {
@@ -48,6 +50,10 @@ XRMediaDrawingContext::XRMediaDrawingContext(
   }
 
   if (video_) {
+    source_video_size_ =
+        gfx::Size(video_->videoWidth(), video_->videoHeight());
+    last_reported_video_size_ = source_video_size_;
+
     uint16_t width = video_->videoWidth();
     uint16_t height = video_->videoHeight();
     if (width > max_texture_size_ || height > max_texture_size_) {
@@ -74,6 +80,19 @@ void XRMediaDrawingContext::OnFrameStart() {
 
   if (!layer_ || !video_) {
     return;
+  }
+
+  const gfx::Size current_video_size(video_->videoWidth(), video_->videoHeight());
+  if (!current_video_size.IsEmpty() &&
+      current_video_size != source_video_size_ &&
+      current_video_size != last_reported_video_size_) {
+    last_reported_video_size_ = current_video_size;
+    DVLOG(1) << "XR media decoded size changed from "
+             << source_video_size_.ToString() << " to "
+             << current_video_size.ToString();
+    if (size_changed_callback_) {
+      size_changed_callback_.Run(current_video_size);
+    }
   }
 
   auto wrapper = SharedGpuContext::ContextProviderWrapper();
