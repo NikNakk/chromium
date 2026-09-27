@@ -5,6 +5,8 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_MODULES_XR_XR_LAYER_DRAWING_CONTEXT_H_
 #define THIRD_PARTY_BLINK_RENDERER_MODULES_XR_XR_LAYER_DRAWING_CONTEXT_H_
 
+#include <cstdint>
+
 #include "base/containers/span.h"
 #include "third_party/blink/renderer/modules/xr/xr_composition_layer.h"
 #include "third_party/blink/renderer/modules/xr/xr_layer_client.h"
