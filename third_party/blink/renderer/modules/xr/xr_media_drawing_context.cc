@@ -28,10 +28,12 @@ namespace blink {
 XRMediaDrawingContext::XRMediaDrawingContext(
     XRSession* session,
     HTMLVideoElement* video,
-    bool needs_eac_reprojection)
+    bool needs_eac_reprojection,
+    const std::vector<uint8_t>& media_projection_data)
     : session_(session),
       video_(video),
-      needs_eac_reprojection_(needs_eac_reprojection) {
+      needs_eac_reprojection_(needs_eac_reprojection),
+      media_projection_data_(media_projection_data) {
   frame_transport_delegate_ =
       MakeGarbageCollected<XRRasterFrameTransportDelegate>();
 
