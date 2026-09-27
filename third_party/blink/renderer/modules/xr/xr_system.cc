@@ -138,8 +138,7 @@ ImmersiveMediaSpatialFormat GetImmersiveMediaSpatialFormat(
     result.spatial_format.projection_type =
         media::VideoProjectionType::kEquirect360;
     result.needs_eac_reprojection = true;
-    LOG(ERROR) << "XRDBG immersive-media: using YouTube EAC fallback for "
-                  "missing stream projection metadata";
+    DVLOG(1) << "Using YouTube EAC fallback for missing stream projection metadata";
   }
 
   return result;
@@ -1099,27 +1098,25 @@ void XRSystem::RequestImmersiveMediaSession(
   const media::VideoSpatialFormat& spatial_format =
       immersive_format.spatial_format;
   const gfx::Size natural_size = video->GetWebMediaPlayer()->NaturalSize();
-  LOG(ERROR) << "XRDBG immersive-media: fullscreen video format="
+  DVLOG(1) << "Immersive-media fullscreen video format="
              << spatial_format.ToString() << " natural_size="
              << natural_size.ToString();
 
   if (spatial_format.projection_type == media::VideoProjectionType::kNone) {
-    LOG(ERROR) << "XRDBG immersive-media: no supported spatial projection "
-                  "metadata; leaving video in normal fullscreen";
+    DVLOG(1) << "No supported spatial projection metadata; leaving video in normal fullscreen";
     return;
   }
 
   if (immersive_media_request_pending_ || immersive_media_session_ ||
       has_outstanding_immersive_request_ ||
       frameProvider()->immersive_session()) {
-    LOG(ERROR) << "XRDBG immersive-media: immersive XR session already active "
-                  "or pending";
+    DVLOG(1) << "Immersive XR session already active or pending";
     return;
   }
 
   TryEnsureService();
   if (!service_.is_bound()) {
-    LOG(ERROR) << "XRDBG immersive-media: VRService unavailable";
+    DVLOG(1) << "Immersive-media VRService unavailable";
     return;
   }
 
@@ -1136,7 +1133,7 @@ void XRSystem::RequestImmersiveMediaSession(
   }
   options->trace_id = base::trace_event::GetNextGlobalTraceId();
 
-  LOG(ERROR) << "XRDBG immersive-media: requesting internal immersive-vr "
+  DVLOG(1) << "Requesting internal immersive-vr session for "
              << spatial_format.ToString();
 
   service_->RequestSession(
@@ -1164,7 +1161,7 @@ void XRSystem::EndImmersiveMediaSession(HTMLVideoElement* video) {
   immersive_media_space_ = nullptr;
   immersive_media_session_ = nullptr;
 
-  LOG(ERROR) << "XRDBG immersive-media: ending internal immersive session";
+  DVLOG(1) << "Ending internal immersive-media session";
   session->ForceEnd(XRSession::ShutdownPolicy::kWaitForResponse);
 }
 
@@ -1175,7 +1172,7 @@ void XRSystem::OnImmersiveMediaSessionReturned(
   has_outstanding_immersive_request_ = false;
 
   if (!result->is_success()) {
-    LOG(ERROR) << "XRDBG immersive-media: session creation failed: "
+    DVLOG(1) << "Immersive-media session creation failed: "
                << GetConsoleMessage(result->get_failure_reason());
     immersive_media_video_ = nullptr;
     return;
@@ -1204,8 +1201,7 @@ void XRSystem::OnImmersiveMediaSessionReturned(
 
   if (!immersive_media_video_ || immersive_media_video_.Get() != video ||
       !video->GetWebMediaPlayer()) {
-    LOG(ERROR) << "XRDBG immersive-media: source video left fullscreen before "
-                  "the XR session became ready";
+    DVLOG(1) << "Source video left fullscreen before immersive-media XR session became ready";
     session->ForceEnd(XRSession::ShutdownPolicy::kWaitForResponse);
     return;
   }
@@ -1258,7 +1254,7 @@ void XRSystem::OnImmersiveMediaSessionReturned(
   session->SetInternalCompositionLayer(layer);
   session->DispatchInitialEvents();
 
-  LOG(ERROR) << "XRDBG immersive-media: native XR media layer active "
+  DVLOG(1) << "Native XR media layer active "
              << spatial_format.ToString() << " texture="
              << drawing_context->TextureWidth() << "x"
              << drawing_context->TextureHeight();
