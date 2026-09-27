@@ -139,6 +139,61 @@ ImmersiveMediaSpatialFormat GetImmersiveMediaSpatialFormat(
         media::VideoProjectionType::kEquirect360;
     result.needs_eac_reprojection = true;
     DVLOG(1) << "Using YouTube EAC fallback for missing stream projection metadata";
+    return result;
+  }
+
+  // videojs-vr predates WebXR and commonly keeps projection information in
+  // JavaScript rather than media-container metadata. Its generated WebGL canvas
+  // is not the media source we want to submit to OpenXR, so recognise the
+  // player and interpret the decoded <video> directly. Sites can expose the
+  // exact projection on the video element with data-vr-projection (or the
+  // older data-projection spelling); otherwise videojs-vr's most common
+  // projection, mono equirectangular 360, is the conservative fallback.
+  Document& document = video->GetDocument();
+  if (document.QuerySelector(AtomicString(".vjs-button-vr"))) {
+    AtomicString projection =
+        video->getAttribute(AtomicString("data-vr-projection"));
+    if (projection.empty()) {
+      projection = video->getAttribute(AtomicString("data-projection"));
+    }
+
+    if (projection == "180_MONO") {
+      result.spatial_format.projection_type =
+          media::VideoProjectionType::kEquirect180;
+      result.spatial_format.stereo_mode = media::VideoStereoMode::kMono;
+    } else if (projection == "180" || projection == "180_LR") {
+      result.spatial_format.projection_type =
+          media::VideoProjectionType::kEquirect180;
+      result.spatial_format.stereo_mode =
+          media::VideoStereoMode::kSideBySideLeftFirst;
+    } else if (projection == "360_LR") {
+      result.spatial_format.projection_type =
+          media::VideoProjectionType::kEquirect360;
+      result.spatial_format.stereo_mode =
+          media::VideoStereoMode::kSideBySideLeftFirst;
+    } else if (projection == "360_TB") {
+      result.spatial_format.projection_type =
+          media::VideoProjectionType::kEquirect360;
+      result.spatial_format.stereo_mode =
+          media::VideoStereoMode::kTopBottomLeftFirst;
+    } else if (projection == "EAC" || projection == "EAC_LR") {
+      result.spatial_format.projection_type =
+          media::VideoProjectionType::kEquirect360;
+      result.spatial_format.stereo_mode =
+          projection == "EAC_LR"
+              ? media::VideoStereoMode::kSideBySideLeftFirst
+              : media::VideoStereoMode::kMono;
+      result.needs_eac_reprojection = true;
+    } else {
+      // Includes explicit "360", AUTO with no container metadata, and sites
+      // that do not publish videojs-vr's currentProjection_ into the DOM.
+      result.spatial_format.projection_type =
+          media::VideoProjectionType::kEquirect360;
+      result.spatial_format.stereo_mode = media::VideoStereoMode::kMono;
+    }
+
+    DVLOG(1) << "Using videojs-vr projection fallback: hint="
+             << projection << " format=" << result.spatial_format.ToString();
   }
 
   return result;
