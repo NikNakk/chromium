@@ -50,7 +50,7 @@ media::VideoCodecProfile GetAV1CodecProfile(const std::vector<uint8_t>& data) {
 // https://www.matroska.org/technical/elements.html#StereoMode
 bool IsValidStereoMode(int64_t stereo_mode_code) {
   const int64_t stereo_mode_min = kWebMStereoModeMono;
-  const int64_t stereo_mode_max = kWebMStereoModeBothEyesBlockRL;
+  const int64_t stereo_mode_max = kWebMStereoModeStereoCustom;
   return stereo_mode_code >= stereo_mode_min &&
          stereo_mode_code <= stereo_mode_max;
 }
@@ -179,6 +179,8 @@ bool WebMVideoClient::InitializeConfig(
       spatial_format.stereo_mode = VideoStereoMode::kSideBySideLeftFirst;
     } else if (stereo_mode_ == kWebMStereoModeTopBottom) {
       spatial_format.stereo_mode = VideoStereoMode::kTopBottomLeftFirst;
+    } else if (stereo_mode_ == kWebMStereoModeStereoCustom) {
+      spatial_format.stereo_mode = VideoStereoMode::kStereoCustom;
     }
   }
 
