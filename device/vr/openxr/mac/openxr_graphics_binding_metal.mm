@@ -689,7 +689,46 @@ bool OpenXrGraphicsBindingMetal::RenderLayer(
     return false;
   }
 
-  if (layer.read_only_data().needs_eac_reprojection) {
+  if (!layer.read_only_data().media_projection_data.empty()) {
+    MetalLayerData& layer_data = GetMetalLayerData(layer);
+    id<MTLRenderPipelineState> pipeline =
+        impl_->MeshPipeline(runtime_texture.pixelFormat);
+    id<MTLSamplerState> sampler = impl_->ScaleSampler();
+    if (!pipeline || !sampler || !impl_->PrepareMesh(layer, layer_data) ||
+        !(runtime_texture.usage & MTLTextureUsageRenderTarget)) {
+      DLOG(ERROR) << __func__
+                  << ": runtime texture cannot accept mesh reprojection";
+      return false;
+    }
+
+    MTLRenderPassDescriptor* pass =
+        [MTLRenderPassDescriptor renderPassDescriptor];
+    pass.colorAttachments[0].texture = runtime_texture;
+    pass.colorAttachments[0].loadAction = MTLLoadActionDontCare;
+    pass.colorAttachments[0].storeAction = MTLStoreActionStore;
+
+    id<MTLRenderCommandEncoder> encoder =
+        [command_buffer renderCommandEncoderWithDescriptor:pass];
+    if (!encoder) {
+      DLOG(ERROR) << __func__
+                  << ": failed to create Metal mesh render encoder";
+      return false;
+    }
+
+    [encoder setRenderPipelineState:pipeline];
+    [encoder setVertexBuffer:layer_data.mesh_vertex_buffer offset:0 atIndex:0];
+    [encoder setFragmentTexture:source_texture atIndex:0];
+    [encoder setFragmentSamplerState:sampler atIndex:0];
+    [encoder drawPrimitives:MTLPrimitiveTypeTriangle
+                vertexStart:0
+                vertexCount:layer_data.mesh_vertex_count];
+    [encoder endEncoding];
+
+    DVLOG(1) << __func__ << ": stream mesh reprojection "
+             << source_texture.width << "x" << source_texture.height << " -> "
+             << runtime_texture.width << "x" << runtime_texture.height
+             << " vertices=" << layer_data.mesh_vertex_count;
+  } else if (layer.read_only_data().needs_eac_reprojection) {
     id<MTLRenderPipelineState> pipeline =
         impl_->EacPipeline(runtime_texture.pixelFormat);
     id<MTLSamplerState> sampler = impl_->ScaleSampler();
@@ -894,7 +933,8 @@ void OpenXrGraphicsBindingMetal::CreateSharedImages(
     // is handled separately before xrReleaseSwapchainImage.
     IOSurfaceRef runtime_surface = texture.iosurface;
     if (runtime_surface && transfer_size == runtime_size &&
-        !layer.read_only_data().needs_eac_reprojection) {
+        !layer.read_only_data().needs_eac_reprojection &&
+        layer.read_only_data().media_projection_data.empty()) {
       const size_t surface_width = IOSurfaceGetWidth(runtime_surface);
       const size_t surface_height = IOSurfaceGetHeight(runtime_surface);
       if (surface_width == static_cast<size_t>(runtime_size.width()) &&
@@ -978,7 +1018,7 @@ bool OpenXrGraphicsBindingMetal::ShouldFlipSubmittedImage(
 
 std::unique_ptr<OpenXrCompositionLayer::GraphicsBindingData>
 OpenXrGraphicsBindingMetal::CreateLayerGraphicsBindingData() const {
-  return nullptr;
+  return std::make_unique<MetalLayerData>();
 }
 
 }  // namespace device
