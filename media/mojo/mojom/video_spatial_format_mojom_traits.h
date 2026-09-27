@@ -22,6 +22,8 @@ struct EnumTraits<media::mojom::VideoStereoMode, ::media::VideoStereoMode> {
         return media::mojom::VideoStereoMode::kSideBySideLeftFirst;
       case ::media::VideoStereoMode::kTopBottomLeftFirst:
         return media::mojom::VideoStereoMode::kTopBottomLeftFirst;
+      case ::media::VideoStereoMode::kStereoCustom:
+        return media::mojom::VideoStereoMode::kStereoCustom;
     }
 
     NOTREACHED();
@@ -36,6 +38,8 @@ struct EnumTraits<media::mojom::VideoStereoMode, ::media::VideoStereoMode> {
         return ::media::VideoStereoMode::kSideBySideLeftFirst;
       case media::mojom::VideoStereoMode::kTopBottomLeftFirst:
         return ::media::VideoStereoMode::kTopBottomLeftFirst;
+      case media::mojom::VideoStereoMode::kStereoCustom:
+        return ::media::VideoStereoMode::kStereoCustom;
     }
 
     NOTREACHED();
