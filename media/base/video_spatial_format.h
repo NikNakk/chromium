@@ -5,6 +5,7 @@
 #ifndef MEDIA_BASE_VIDEO_SPATIAL_FORMAT_H_
 #define MEDIA_BASE_VIDEO_SPATIAL_FORMAT_H_
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
