@@ -212,6 +212,20 @@ struct ScaleVertexOut {
   float2 texcoord;
 };
 
+struct MediaMeshVertex {
+  float2 position;
+  float2 texcoord;
+};
+
+vertex ScaleVertexOut xr_mesh_vertex(
+    uint vertex_id [[vertex_id]],
+    const device MediaMeshVertex* vertices [[buffer(0)]]) {
+  ScaleVertexOut out;
+  out.position = float4(vertices[vertex_id].position, 0.0, 1.0);
+  out.texcoord = vertices[vertex_id].texcoord;
+  return out;
+}
+
 vertex ScaleVertexOut xr_scale_vertex(uint vertex_id [[vertex_id]]) {
   constexpr float2 positions[3] = {
       float2(-1.0, -1.0),
@@ -343,9 +357,11 @@ fragment float4 xr_eac_fragment(
       }
 
       scale_vertex = [scale_library newFunctionWithName:@"xr_scale_vertex"];
+      mesh_vertex = [scale_library newFunctionWithName:@"xr_mesh_vertex"];
       scale_fragment = [scale_library newFunctionWithName:@"xr_scale_fragment"];
       eac_fragment = [scale_library newFunctionWithName:@"xr_eac_fragment"];
-      if (scale_vertex == nil || scale_fragment == nil || eac_fragment == nil) {
+      if (scale_vertex == nil || mesh_vertex == nil || scale_fragment == nil ||
+          eac_fragment == nil) {
         DLOG(ERROR) << "OpenXR Metal media shader functions are unavailable";
         return nil;
       }
@@ -414,16 +430,81 @@ fragment float4 xr_eac_fragment(
     return pipeline;
   }
 
+  id<MTLRenderPipelineState> MeshPipeline(MTLPixelFormat pixel_format) {
+    auto existing = mesh_pipelines.find(static_cast<uint64_t>(pixel_format));
+    if (existing != mesh_pipelines.end()) {
+      return existing->second;
+    }
+
+    if (!ScalePipeline(pixel_format) || mesh_vertex == nil) {
+      return nil;
+    }
+
+    MTLRenderPipelineDescriptor* descriptor =
+        [[MTLRenderPipelineDescriptor alloc] init];
+    descriptor.vertexFunction = mesh_vertex;
+    descriptor.fragmentFunction = scale_fragment;
+    descriptor.colorAttachments[0].pixelFormat = pixel_format;
+
+    NSError* error = nil;
+    id<MTLRenderPipelineState> pipeline =
+        [device newRenderPipelineStateWithDescriptor:descriptor error:&error];
+    if (pipeline == nil) {
+      DLOG(ERROR) << "Failed to create OpenXR Metal mesh pipeline: "
+                  << (error ? error.localizedDescription.UTF8String
+                            : "unknown error");
+      return nil;
+    }
+
+    mesh_pipelines.emplace(static_cast<uint64_t>(pixel_format), pipeline);
+    return pipeline;
+  }
+
+  bool PrepareMesh(OpenXrCompositionLayer& layer, MetalLayerData& data) {
+    if (data.mesh_initialized) {
+      return data.mesh_vertex_buffer != nil && data.mesh_vertex_count != 0;
+    }
+    data.mesh_initialized = true;
+
+    const auto& projection_data = layer.read_only_data().media_projection_data;
+    auto meshes = ParseSphericalVideoMesh(base::span(projection_data));
+    if (!meshes || meshes->size() != 1) {
+      DLOG(ERROR) << "Failed to parse supported single-view spherical mesh";
+      return false;
+    }
+
+    auto render_vertices = BuildMeshRenderVertices(meshes->front());
+    if (!render_vertices || render_vertices->empty()) {
+      DLOG(ERROR) << "Failed to build equirectangular render mesh";
+      return false;
+    }
+
+    data.mesh_vertex_buffer = [device
+        newBufferWithBytes:render_vertices->data()
+                    length:render_vertices->size() * sizeof(MeshRenderVertex)
+                   options:MTLResourceStorageModeShared];
+    if (data.mesh_vertex_buffer == nil) {
+      DLOG(ERROR) << "Failed to allocate OpenXR Metal mesh vertex buffer";
+      return false;
+    }
+    data.mesh_vertex_count = render_vertices->size();
+    DVLOG(1) << "Prepared spherical video mesh with "
+             << data.mesh_vertex_count << " render vertices";
+    return true;
+  }
+
   id<MTLSamplerState> ScaleSampler() const { return scale_sampler; }
 
  private:
   id<MTLLibrary> __strong scale_library = nil;
   id<MTLFunction> __strong scale_vertex = nil;
+  id<MTLFunction> __strong mesh_vertex = nil;
   id<MTLFunction> __strong scale_fragment = nil;
   id<MTLFunction> __strong eac_fragment = nil;
   id<MTLSamplerState> __strong scale_sampler = nil;
   std::map<uint64_t, id<MTLRenderPipelineState>> scale_pipelines;
   std::map<uint64_t, id<MTLRenderPipelineState>> eac_pipelines;
+  std::map<uint64_t, id<MTLRenderPipelineState>> mesh_pipelines;
 };
 
 OpenXrGraphicsBindingMetal::OpenXrGraphicsBindingMetal(
