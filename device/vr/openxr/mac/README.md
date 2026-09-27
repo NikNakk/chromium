@@ -275,6 +275,20 @@ Keeping these separate makes the macOS OpenXR runtime/backend independently
 upstreamable without automatically changing ordinary fullscreen `<video>`
 behaviour.
 
+For a persistent development setup, the same features are exposed in
+`chrome://flags` on macOS:
+
+- **Enable OpenXR WebXR Runtime** enables `OpenXR`;
+- **Immersive video playback via OpenXR** enables
+  `ImmersiveVideoPlaybackViaOpenXr`;
+- the existing **Force WebXR Runtime** selector can optionally be set to
+  **OpenXR** when more than one runtime is available.
+
+Flags are stored in the Chromium profile and take effect after relaunch, so
+launch switches are not required for routine testing once they are enabled.
+Command-line feature switches remain useful for clean profiles, automated tests,
+and reproducing an exact configuration.
+
 ## Browser-owned immersive media
 
 The browser-native immersive-media path is implemented on top of normal
