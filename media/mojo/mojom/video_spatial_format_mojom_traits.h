@@ -54,6 +54,8 @@ struct EnumTraits<media::mojom::VideoProjectionType,
         return media::mojom::VideoProjectionType::kEquirect180;
       case ::media::VideoProjectionType::kEquirect360:
         return media::mojom::VideoProjectionType::kEquirect360;
+      case ::media::VideoProjectionType::kMesh:
+        return media::mojom::VideoProjectionType::kMesh;
     }
 
     NOTREACHED();
@@ -68,6 +70,8 @@ struct EnumTraits<media::mojom::VideoProjectionType,
         return ::media::VideoProjectionType::kEquirect180;
       case media::mojom::VideoProjectionType::kEquirect360:
         return ::media::VideoProjectionType::kEquirect360;
+      case media::mojom::VideoProjectionType::kMesh:
+        return ::media::VideoProjectionType::kMesh;
     }
 
     NOTREACHED();
@@ -87,10 +91,16 @@ struct StructTraits<media::mojom::VideoSpatialFormatDataView,
     return input.stereo_mode;
   }
 
+  static const std::vector<uint8_t>& projection_data(
+      const media::VideoSpatialFormat& input) {
+    return input.projection_data;
+  }
+
   static bool Read(media::mojom::VideoSpatialFormatDataView input,
                    media::VideoSpatialFormat* output) {
     return input.ReadProjectionType(&output->projection_type) &&
-           input.ReadStereoMode(&output->stereo_mode);
+           input.ReadStereoMode(&output->stereo_mode) &&
+           input.ReadProjectionData(&output->projection_data);
   }
 };
 
