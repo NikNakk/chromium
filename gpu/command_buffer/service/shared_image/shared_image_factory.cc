@@ -15,7 +15,7 @@
 #include "base/debug/dump_without_crashing.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/strings/string_split.h"
-#include "base/trace_event/memory_dump_manager.h"
+#include "base/trace_event/memory_dump_manager.h"\n#include "base/trace_event/trace_event.h"
 #include "build/build_config.h"
 #include "build/chromecast_buildflags.h"
 #include "components/viz/common/resources/shared_image_format_utils.h"
@@ -1227,7 +1227,10 @@ SharedImageFactory::GetMetalSharedEventFences(
                   std::make_move_iterator(backing_fences.end()));
   }
 
-  return gfx::MTLSharedEventFence::Reduce(std::move(fences));
+  fences = gfx::MTLSharedEventFence::Reduce(std::move(fences));
+  TRACE_EVENT_INSTANT("xr", "OpenXRMetalFenceQuery",
+                      "mailboxes", mailboxes.size(), "fences", fences.size());
+  return fences;
 }
 #endif
 
