@@ -25,7 +25,7 @@ class XRMediaDrawingContext : public XRLayerDrawingContext {
       XRSession* session,
       HTMLVideoElement* video,
       bool needs_eac_reprojection = false,
-      const std::vector<uint8_t>& media_projection_data = {});
+      std::vector<uint8_t> media_projection_data = {});
   ~XRMediaDrawingContext() override;
 
   void OnFrameStart() override;
