@@ -96,6 +96,13 @@ void XRMediaDrawingContext::OnFrameStart() {
     if (size_changed_callback_) {
       size_changed_callback_.Run(current_video_size);
     }
+
+    // The resize callback rebuilds the internal XR layer on a posted task.
+    // Do not copy this newly larger decoded frame into the old layer's
+    // smaller SharedImage in the meantime: RasterInterface::CopySharedImage
+    // would otherwise see mismatched destination dimensions. The next frame
+    // will use the rebuilt layer.
+    return;
   }
 
   auto wrapper = SharedGpuContext::ContextProviderWrapper();
