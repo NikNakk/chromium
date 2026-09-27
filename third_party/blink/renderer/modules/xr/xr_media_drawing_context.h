@@ -62,10 +62,6 @@ class XRMediaDrawingContext : public XRLayerDrawingContext {
   Member<HTMLVideoElement> video_;
   Member<XRCompositionLayer> layer_;
   gpu::SyncToken sync_token_;
-  // VideoFrame::unique_id() of the last frame copied into the XR SharedImage.
-  // A decoded video frame can remain current across multiple XR ticks; avoid
-  // recopying the same 8K frame while still allowing the layer to be submitted.
-  uint64_t last_media_frame_id_ = 0;
   Member<XRFrameTransportDelegate> frame_transport_delegate_;
   uint16_t width_ = 0;
   uint16_t height_ = 0;
