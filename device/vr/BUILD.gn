@@ -332,8 +332,11 @@ if (enable_vr) {
           "openxr/mac/openxr_graphics_binding_metal.mm",
           "openxr/mac/openxr_platform_helper_mac.cc",
           "openxr/mac/openxr_platform_helper_mac.h",
+          "openxr/spherical_video_mesh_parser.cc",
+          "openxr/spherical_video_mesh_parser.h",
         ]
 
+        deps += [ "//third_party/zlib" ]
         frameworks = [ "Metal.framework" ]
       }
 
