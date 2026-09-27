@@ -47,6 +47,8 @@ namespace mp4 {
 
 namespace {
 
+constexpr size_t kMaxSphericalProjectionDataBytes = 4 * 1024 * 1024;
+
 const size_t kKeyIdSize = 16;
 const size_t kFlacMetadataBlockStreaminfoSize = 34;
 
@@ -2655,8 +2657,13 @@ bool MeshProjection::Parse(BoxReader* reader) {
   // everything after the outer ISO BMFF box header, including the FullBox
   // version/flags, CRC, encoding FourCC and encoded mesh boxes.
   const auto payload = reader->buffer().subspan(reader->pos());
+  if (payload.empty() || payload.size() > kMaxSphericalProjectionDataBytes) {
+    MEDIA_LOG(ERROR, reader->media_log())
+        << "Unsupported mshp payload size: " << payload.size();
+    return false;
+  }
   projection_data.assign(payload.begin(), payload.end());
-  return !projection_data.empty();
+  return true;
 }
 
 LegacyMeshProjection::LegacyMeshProjection() = default;
@@ -2669,8 +2676,13 @@ FourCC LegacyMeshProjection::BoxType() const {
 
 bool LegacyMeshProjection::Parse(BoxReader* reader) {
   const auto payload = reader->buffer().subspan(reader->pos());
+  if (payload.empty() || payload.size() > kMaxSphericalProjectionDataBytes) {
+    MEDIA_LOG(ERROR, reader->media_log())
+        << "Unsupported ytmp payload size: " << payload.size();
+    return false;
+  }
   projection_data.assign(payload.begin(), payload.end());
-  return !projection_data.empty();
+  return true;
 }
 
 Projection::Projection() = default;
