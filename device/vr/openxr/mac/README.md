@@ -320,7 +320,7 @@ annotate the underlying `HTMLVideoElement` before requesting fullscreen:
 
 The attribute is deliberately generic and does not identify any player or site.
 Supported values are `360`, `360_LR`, `360_TB`, `180_MONO`, `180`,
-`180_LR`, `EAC`, and `EAC_LR`. Real container projection metadata still
+`180_LR`, `180_TB`, `EAC`, and `EAC_LR`. Real container projection metadata still
 takes precedence. The hint only affects the existing browser-owned immersive
 video path; it does not itself bypass fullscreen/session validation.
 
