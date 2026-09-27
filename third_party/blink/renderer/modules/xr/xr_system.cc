@@ -1219,7 +1219,8 @@ void XRSystem::OnImmersiveMediaSessionReturned(
   auto* space = MakeGarbageCollected<XRReferenceSpace>(
       session, device::mojom::blink::XRReferenceSpaceType::kLocal);
   auto* drawing_context = MakeGarbageCollected<XRMediaDrawingContext>(
-      session, video, immersive_format.needs_eac_reprojection);
+      session, video, immersive_format.needs_eac_reprojection,
+      spatial_format.projection_data);
 
   auto* init = XREquirectLayerInit::Create();
   init->setSpace(space);
