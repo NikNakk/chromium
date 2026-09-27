@@ -363,6 +363,13 @@ struct MEDIA_EXPORT MeshProjection : Box {
   std::vector<uint8_t> projection_data;
 };
 
+// Early spherical-video files used 'ytmp' for the same payload later
+// standardized as 'mshp'.
+struct MEDIA_EXPORT LegacyMeshProjection : Box {
+  DECLARE_BOX_METHODS(LegacyMeshProjection);
+  std::vector<uint8_t> projection_data;
+};
+
 struct MEDIA_EXPORT Projection : Box {
   DECLARE_BOX_METHODS(Projection);
   VideoProjectionType type = VideoProjectionType::kNone;
