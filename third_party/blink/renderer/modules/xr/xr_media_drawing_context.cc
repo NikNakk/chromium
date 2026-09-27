@@ -34,7 +34,8 @@ XRMediaDrawingContext::XRMediaDrawingContext(
     : session_(session),
       video_(video),
       needs_eac_reprojection_(needs_eac_reprojection),
-      media_projection_data_(std::move(media_projection_data)) {
+      media_projection_data_(
+          base::span<const uint8_t>(media_projection_data)) {
   frame_transport_delegate_ =
       MakeGarbageCollected<XRRasterFrameTransportDelegate>();
 
