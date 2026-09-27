@@ -94,6 +94,14 @@ constexpr auto kEquirect180PrivateData = std::to_array<uint8_t>({
     0x30, 0x00, 0x00, 0x00   // right
 });
 
+constexpr auto kMeshPrivateData = std::to_array<uint8_t>({
+    0x00, 0x00, 0x00, 0x00,  // version/flags
+    0x00, 0x00, 0x00, 0x00,  // crc
+    0x72, 0x61, 0x77, 0x20,  // 'raw '
+    0x00, 0x00, 0x00, 0x08,  // empty child box size
+    0x6d, 0x65, 0x73, 0x68,  // 'mesh'
+});
+
 class WebMProjectionParserTest : public testing::Test {
  public:
   WebMProjectionParserTest()
@@ -316,6 +324,21 @@ TEST_F(WebMProjectionParserTest, ProjectionPrivateMissingMesh) {
   parser->OnFloat(kWebMIdProjectionPoseRoll, 0.0);
   EXPECT_MEDIA_LOG(ProjectionPrivateRequiredForCubemapOrMesh());
   VideoClientOnListEnd(kWebMIdProjection);
+}
+
+TEST_F(WebMProjectionParserTest, ProjectionPrivateMeshIsPreserved) {
+  auto* parser = VideoClientOnListStart(kWebMIdProjection);
+  parser->OnUInt(kWebMIdProjectionType, 3);
+  parser->OnFloat(kWebMIdProjectionPoseYaw, 0.0);
+  parser->OnFloat(kWebMIdProjectionPoseRoll, 0.0);
+  EXPECT_TRUE(parser->OnBinary(kWebMIdProjectionPrivate, kMeshPrivateData));
+  VideoClientOnListEnd(kWebMIdProjection);
+
+  auto* projection_parser = static_cast<WebMProjectionParser*>(parser);
+  EXPECT_EQ(projection_parser->GetProjectionType(),
+            VideoProjectionType::kMesh);
+  EXPECT_THAT(projection_parser->GetProjectionData(),
+              testing::ElementsAreArray(kMeshPrivateData));
 }
 
 }  // namespace media
