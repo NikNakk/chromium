@@ -1452,6 +1452,7 @@ bool VideoSampleEntry::Parse(BoxReader* reader) {
   if (reader->HasChild(&sv3d)) {
     RCHECK(reader->ReadChild(&sv3d));
     video_spatial_format.projection_type = sv3d.projection.type;
+    video_spatial_format.projection_data = sv3d.projection.projection_data;
   }
 
   if (video_info.profile == VIDEO_CODEC_PROFILE_UNKNOWN) {
@@ -2640,6 +2641,22 @@ bool Equirectangular::Parse(BoxReader* reader) {
   return true;
 }
 
+MeshProjection::MeshProjection() = default;
+MeshProjection::MeshProjection(const MeshProjection& other) = default;
+MeshProjection::~MeshProjection() = default;
+FourCC MeshProjection::BoxType() const {
+  return FOURCC_MSHP;
+}
+
+bool MeshProjection::Parse(BoxReader* reader) {
+  // Preserve the mshp payload exactly as Spherical Video V2 defines it:
+  // everything after the outer ISO BMFF box header, including the FullBox
+  // version/flags, CRC, encoding FourCC and encoded mesh boxes.
+  const auto payload = reader->buffer().subspan(reader->pos());
+  projection_data.assign(payload.begin(), payload.end());
+  return !projection_data.empty();
+}
+
 Projection::Projection() = default;
 Projection::Projection(const Projection& other) = default;
 Projection::~Projection() = default;
@@ -2664,6 +2681,14 @@ bool Projection::Parse(BoxReader* reader) {
     } else {
       type = VideoProjectionType::kEquirect360;
     }
+    return true;
+  }
+
+  MeshProjection mesh;
+  if (reader->HasChild(&mesh)) {
+    RCHECK(reader->ReadChild(&mesh));
+    type = VideoProjectionType::kMesh;
+    projection_data = std::move(mesh.projection_data);
   }
 
   return true;
