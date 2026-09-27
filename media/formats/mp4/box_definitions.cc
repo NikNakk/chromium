@@ -2659,6 +2659,20 @@ bool MeshProjection::Parse(BoxReader* reader) {
   return !projection_data.empty();
 }
 
+LegacyMeshProjection::LegacyMeshProjection() = default;
+LegacyMeshProjection::LegacyMeshProjection(const LegacyMeshProjection& other) =
+    default;
+LegacyMeshProjection::~LegacyMeshProjection() = default;
+FourCC LegacyMeshProjection::BoxType() const {
+  return FOURCC_YTMP;
+}
+
+bool LegacyMeshProjection::Parse(BoxReader* reader) {
+  const auto payload = reader->buffer().subspan(reader->pos());
+  projection_data.assign(payload.begin(), payload.end());
+  return !projection_data.empty();
+}
+
 Projection::Projection() = default;
 Projection::Projection(const Projection& other) = default;
 Projection::~Projection() = default;
@@ -2691,6 +2705,14 @@ bool Projection::Parse(BoxReader* reader) {
     RCHECK(reader->ReadChild(&mesh));
     type = VideoProjectionType::kMesh;
     projection_data = std::move(mesh.projection_data);
+    return true;
+  }
+
+  LegacyMeshProjection legacy_mesh;
+  if (reader->HasChild(&legacy_mesh)) {
+    RCHECK(reader->ReadChild(&legacy_mesh));
+    type = VideoProjectionType::kMesh;
+    projection_data = std::move(legacy_mesh.projection_data);
   }
 
   return true;
