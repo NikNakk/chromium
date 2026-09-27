@@ -6731,6 +6731,12 @@ inline constexpr char kOpenXRName[] = "Enable OpenXR WebXR Runtime";
 inline constexpr char kOpenXRDescription[] =
     "Enables the use of the OpenXR runtime to create WebXR sessions.";
 
+inline constexpr char kImmersiveVideoPlaybackViaOpenXrName[] =
+    "Immersive video playback via OpenXR";
+inline constexpr char kImmersiveVideoPlaybackViaOpenXrDescription[] =
+    "Enables browser-owned immersive playback of supported fullscreen spatial "
+    "video through OpenXR.";
+
 inline constexpr char kOpenXRAndroidSmoothDepthName[] =
     "Enable OpenXR Smooth Depth";
 inline constexpr char kOpenXRAndroidSmoothDepthDescription[] =
