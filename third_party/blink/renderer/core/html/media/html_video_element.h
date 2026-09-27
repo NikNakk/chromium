@@ -179,6 +179,13 @@ class CORE_EXPORT HTMLVideoElement final
   void OnExitedPictureInPicture();
 
   void SetIsEffectivelyFullscreen(blink::WebFullscreenVideoStatus);
+
+  // Marks an old WebVR/videojs-vr presentation as active. This lets the
+  // browser-owned immersive media path use the underlying decoded video even
+  // when the legacy player presents a generated WebGL canvas rather than the
+  // HTMLVideoElement itself.
+  void SetLegacyVrPresentationActive(bool active);
+
   void SetIsDominantVisibleContent(bool is_dominant);
 
   bool IsRichlyEditableForAccessibility() const override { return false; }
@@ -321,6 +328,12 @@ class CORE_EXPORT HTMLVideoElement final
   // to display type and other UI features. This does not mean the DOM element
   // is fullscreen.
   bool is_effectively_fullscreen_ : 1 = false;
+
+  // True while a recognised legacy WebVR player (currently videojs-vr) is in
+  // its VR presentation mode. Unlike |is_effectively_fullscreen_| this does
+  // not affect media display type; it is only an input to browser-owned
+  // immersive video playback.
+  bool legacy_vr_presentation_active_ : 1 = false;
 
   bool video_has_played_ : 1 = false;
 
