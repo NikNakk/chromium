@@ -36,6 +36,7 @@
 
 #include "base/format_macros.h"
 #include "base/time/time.h"
+#include "build/build_config.h"
 #include "third_party/blink/renderer/bindings/core/v8/js_based_event_listener.h"
 #include "third_party/blink/renderer/bindings/core/v8/js_event_listener.h"
 #include "third_party/blink/renderer/bindings/core/v8/to_v8_traits.h"
@@ -45,6 +46,7 @@
 #include "third_party/blink/renderer/bindings/core/v8/v8_union_boolean_eventlisteneroptions.h"
 #include "third_party/blink/renderer/core/dom/abort_signal.h"
 #include "third_party/blink/renderer/core/dom/abort_signal_registry.h"
+#include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/events/add_event_listener_options_resolved.h"
 #include "third_party/blink/renderer/core/dom/events/event.h"
 #include "third_party/blink/renderer/core/dom/events/event_dispatch_forbidden_scope.h"
@@ -62,6 +64,7 @@
 #include "third_party/blink/renderer/core/frame/performance_monitor.h"
 #include "third_party/blink/renderer/core/frame/settings.h"
 #include "third_party/blink/renderer/core/frame/web_feature.h"
+#include "third_party/blink/renderer/core/html/media/html_video_element.h"
 #include "third_party/blink/renderer/core/inspector/console_message.h"
 #include "third_party/blink/renderer/core/pointer_type_names.h"
 #include "third_party/blink/renderer/core/probe/core_probes.h"
@@ -84,6 +87,48 @@
 
 namespace blink {
 namespace {
+
+#if BUILDFLAG(IS_MAC)
+void MaybeHandleVideoJsVrPresentation(EventTarget& target, const Event& event) {
+  const bool activating = event.type() == AtomicString("vrdisplayactivate");
+  const bool deactivating = event.type() == AtomicString("vrdisplaydeactivate");
+  if (!activating && !deactivating) {
+    return;
+  }
+
+  LocalDOMWindow* window = target.ToLocalDOMWindow();
+  if (!window || !window->document()) {
+    return;
+  }
+
+  Document& document = *window->document();
+  Settings* settings = document.GetSettings();
+  if (!settings || !settings->GetImmersiveVideoPlaybackEnabled()) {
+    return;
+  }
+
+  // videojs-vr's CardboardButton dispatches these legacy WebVR events on
+  // window. Require its distinctive control before treating an arbitrary
+  // WebVR event as a request for browser-owned immersive media playback.
+  if (!document.QuerySelector(AtomicString(".vjs-button-vr"))) {
+    return;
+  }
+
+  // Video.js normally moves the source <video> under a .video-js player
+  // wrapper. Keep a fallback for versions/configurations where the class
+  // remains on the video element itself.
+  Element* source = document.QuerySelector(
+      AtomicString(".video-js video, video.video-js"));
+  auto* video = DynamicTo<HTMLVideoElement>(source);
+  if (!video) {
+    return;
+  }
+
+  DVLOG(1) << "videojs-vr legacy presentation "
+           << (activating ? "activated" : "deactivated");
+  video->SetLegacyVrPresentationActive(activating);
+}
+#endif  // BUILDFLAG(IS_MAC)
 
 enum PassiveForcedListenerResultType {
   kPreventDefaultNotCalled,
@@ -855,11 +900,18 @@ bool EventTarget::dispatchEventForBindings(Event* event,
 
   event->SetTrusted(false);
 
+  // Let the page update its legacy WebVR/Cardboard state first, then mirror a
+  // recognised videojs-vr presentation into Chromium's native OpenXR media
+  // path. The event remains visible to page script for compatibility.
+  const DispatchEventResult result = DispatchEventInternal(*event);
+#if BUILDFLAG(IS_MAC)
+  MaybeHandleVideoJsVrPresentation(*this, *event);
+#endif
+
   // Return whether the event was cancelled or not to JS not that it
   // might have actually been default handled; so check only against
   // CanceledByEventHandler.
-  return DispatchEventInternal(*event) !=
-         DispatchEventResult::kCanceledByEventHandler;
+  return result != DispatchEventResult::kCanceledByEventHandler;
 }
 
 DispatchEventResult EventTarget::DispatchEvent(Event& event) {
