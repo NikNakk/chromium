@@ -5,6 +5,8 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_MODULES_XR_XR_MEDIA_DRAWING_CONTEXT_H_
 #define THIRD_PARTY_BLINK_RENDERER_MODULES_XR_XR_MEDIA_DRAWING_CONTEXT_H_
 
+#include <vector>
+
 #include "gpu/command_buffer/common/sync_token.h"
 #include "third_party/blink/renderer/modules/xr/xr_layer_drawing_context.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
@@ -19,9 +21,11 @@ class XRSession;
 
 class XRMediaDrawingContext : public XRLayerDrawingContext {
  public:
-  XRMediaDrawingContext(XRSession* session,
-                        HTMLVideoElement* video,
-                        bool needs_eac_reprojection = false);
+  XRMediaDrawingContext(
+      XRSession* session,
+      HTMLVideoElement* video,
+      bool needs_eac_reprojection = false,
+      const std::vector<uint8_t>& media_projection_data = {});
   ~XRMediaDrawingContext() override;
 
   void OnFrameStart() override;
@@ -36,6 +40,9 @@ class XRMediaDrawingContext : public XRLayerDrawingContext {
   bool IsMediaLayer() const override { return true; }
   bool NeedsEacReprojection() const override {
     return needs_eac_reprojection_;
+  }
+  base::span<const uint8_t> MediaProjectionData() const override {
+    return media_projection_data_;
   }
 
   XRSession* session() const override { return session_.Get(); }
@@ -57,6 +64,7 @@ class XRMediaDrawingContext : public XRLayerDrawingContext {
   uint16_t max_texture_size_ = 2048;
   bool content_changed_ = false;
   bool needs_eac_reprojection_ = false;
+  std::vector<uint8_t> media_projection_data_;
 };
 
 }  // namespace blink
