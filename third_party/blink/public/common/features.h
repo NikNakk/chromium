@@ -1755,6 +1755,11 @@ BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE_PARAM(int,
 // reduce CPU/power usage during fullscreen video playback.
 BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kThrottleFullscreenVideoActiveTab);
 
+// Enables browser-owned immersive video playback through an OpenXR runtime.
+// Kept separate from OpenXR runtime enablement because it changes ordinary
+// fullscreen video behaviour rather than exposing only the WebXR API.
+BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kImmersiveVideoPlaybackViaOpenXr);
+
 BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kUACHOverrideBlank);
 
 BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(
