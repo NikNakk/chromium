@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "base/containers/span.h"
+#include "device/vr/vr_export.h"
 
 namespace device {
 
@@ -31,7 +32,8 @@ struct SphericalVideoMesh {
 // Parses the ProjectionPrivate payload for a Spherical Video V2 Mesh
 // projection. WebM carries the mshp FullBox payload without the outer box
 // size/FourCC. Returns one or two meshes on success.
-std::optional<std::vector<SphericalVideoMesh>> ParseSphericalVideoMesh(
+DEVICE_VR_EXPORT std::optional<std::vector<SphericalVideoMesh>>
+ParseSphericalVideoMesh(
     base::span<const uint8_t> projection_data);
 
 }  // namespace device
