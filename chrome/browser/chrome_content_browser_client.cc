@@ -4768,9 +4768,12 @@ void ChromeContentBrowserClient::OverrideWebPreferences(
 #endif  // BUILDFLAG(IS_ANDROID)
 
 #if BUILDFLAG(IS_MAC)
-    // The macOS OpenXR port presents spatial fullscreen video through an
-    // internal XR media session rather than an Android/SceneCore overlay.
-    web_prefs->immersive_video_playback_enabled = true;
+    // Keep browser-owned immersive video separate from WebXR/OpenXR runtime
+    // enablement. This changes ordinary fullscreen-video behaviour and is
+    // therefore opt-in while the desktop path matures.
+    web_prefs->immersive_video_playback_enabled =
+        base::FeatureList::IsEnabled(
+            blink::features::kImmersiveVideoPlaybackViaOpenXr);
 #endif  // BUILDFLAG(IS_MAC)
 
     // web_app_scope value is platform specific.
