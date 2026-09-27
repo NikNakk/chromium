@@ -203,6 +203,10 @@ class SharedImageRepresentationFactoryRef : public SharedImageRepresentation {
     backing()->SetSharedImagePoolId(std::move(pool_id));
   }
 
+#if BUILDFLAG(IS_MAC)
+  std::vector<gfx::MTLSharedEventFence> GetExclusiveSharedEventFences();
+#endif
+
  private:
   const bool is_primary_;
 };
