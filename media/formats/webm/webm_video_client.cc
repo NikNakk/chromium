@@ -184,6 +184,9 @@ bool WebMVideoClient::InitializeConfig(
 
   if (projection_parsed_) {
     spatial_format.projection_type = projection_parser_.GetProjectionType();
+    if (spatial_format.projection_type == VideoProjectionType::kMesh) {
+      spatial_format.projection_data = projection_parser_.GetProjectionData();
+    }
   }
   config->set_spatial_format(spatial_format);
 
