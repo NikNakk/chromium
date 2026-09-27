@@ -6075,6 +6075,15 @@ const FeatureEntry kFeatureEntries[] = {
      flag_descriptions::kWebXrHandAnonymizationStrategyName,
      flag_descriptions::kWebXrHandAnonymizationStrategyDescription,
      kOsDesktop | kOsAndroid, MULTI_VALUE_TYPE(KWebXrHandAnonymizationChoices)},
+#if BUILDFLAG(IS_MAC) && BUILDFLAG(ENABLE_OPENXR)
+    {"enable-openxr-macos", flag_descriptions::kOpenXRName,
+     flag_descriptions::kOpenXRDescription, kOsMac,
+     FEATURE_VALUE_TYPE(device::features::kOpenXR)},
+    {"immersive-video-openxr",
+     flag_descriptions::kImmersiveVideoPlaybackViaOpenXrName,
+     flag_descriptions::kImmersiveVideoPlaybackViaOpenXrDescription, kOsMac,
+     FEATURE_VALUE_TYPE(blink::features::kImmersiveVideoPlaybackViaOpenXr)},
+#endif  // BUILDFLAG(IS_MAC) && BUILDFLAG(ENABLE_OPENXR)
 #if BUILDFLAG(IS_ANDROID) && BUILDFLAG(ENABLE_OPENXR)
     {"enable-openxr-android", flag_descriptions::kOpenXRName,
      flag_descriptions::kOpenXRDescription, kOsAndroid,
