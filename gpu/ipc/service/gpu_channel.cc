@@ -187,6 +187,13 @@ class GPU_IPC_SERVICE_EXPORT GpuChannelMessageFilter
 #endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_ANDROID)
   void SignalSyncToken(const std::vector<gpu::SyncToken>& sync_tokens,
                        SignalSyncTokenCallback callback) override;
+#if BUILDFLAG(IS_MAC)
+  void SignalSyncTokenAndWaitForMetalSharedEvents(
+      const std::vector<gpu::SyncToken>& sync_tokens,
+      const std::vector<gpu::Mailbox>& mailboxes,
+      int32_t frame_index,
+      SignalSyncTokenAndWaitForMetalSharedEventsCallback callback) override;
+#endif
   void WaitForTokenInRange(int32_t routing_id,
                            int32_t start,
                            int32_t end,
@@ -662,6 +669,63 @@ void GpuChannelMessageFilter::SignalSyncToken(
   scheduler_->ScheduleTask(Scheduler::Task(it->second, std::move(run_on_main),
                                            sync_tokens, SyncToken()));
 }
+
+#if BUILDFLAG(IS_MAC)
+void GpuChannelMessageFilter::SignalSyncTokenAndWaitForMetalSharedEvents(
+    const std::vector<gpu::SyncToken>& sync_tokens,
+    const std::vector<gpu::Mailbox>& mailboxes,
+    int32_t frame_index,
+    SignalSyncTokenAndWaitForMetalSharedEventsCallback callback) {
+  base::AutoLock auto_lock(gpu_channel_lock_);
+  if (!gpu_channel_) {
+    // The channel is already tearing down. Drop the reply rather than allowing
+    // a late XR callback to outlive the GPU channel.
+    std::visit([](auto& receiver) { receiver.reset(); }, receiver_);
+    return;
+  }
+
+  const int32_t routing_id =
+      static_cast<int32_t>(GpuChannelReservedRoutes::kSharedImageInterface);
+  auto it = route_sequences_.find(routing_id);
+  if (it == route_sequences_.end()) {
+    DVLOG(1) << "Could not find SharedImageInterface route id for Metal wait";
+    std::move(callback).Run();
+    return;
+  }
+
+  auto reply_on_io = base::BindPostTask(
+      base::SequencedTaskRunner::GetCurrentDefault(), std::move(callback));
+  base::WeakPtr<gpu::GpuChannel> weak_channel = gpu_channel_->AsWeakPtr();
+
+  auto run_on_main = base::BindOnce(
+      [](base::WeakPtr<gpu::GpuChannel> channel,
+         std::vector<gpu::Mailbox> mailboxes, int32_t frame_index,
+         SignalSyncTokenAndWaitForMetalSharedEventsCallback callback) {
+        if (!channel) {
+          return;
+        }
+
+        TRACE_EVENT_INSTANT("xr", "OpenXRSyncTokenSignaled",
+                            "frame_index", frame_index);
+
+        channel->shared_image_stub()->WaitForMetalSharedEvents(
+            mailboxes, frame_index,
+            base::BindOnce(
+                [](base::WeakPtr<gpu::GpuChannel> channel,
+                   SignalSyncTokenAndWaitForMetalSharedEventsCallback callback) {
+                  if (!channel) {
+                    return;
+                  }
+                  std::move(callback).Run();
+                },
+                channel, std::move(callback)));
+      },
+      weak_channel, mailboxes, frame_index, std::move(reply_on_io));
+
+  scheduler_->ScheduleTask(Scheduler::Task(
+      it->second, std::move(run_on_main), sync_tokens, SyncToken()));
+}
+#endif
 
 void GpuChannelMessageFilter::WaitForTokenInRange(
     int32_t routing_id,

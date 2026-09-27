@@ -5,6 +5,8 @@
 #ifndef GPU_IPC_SERVICE_SHARED_IMAGE_STUB_H_
 #define GPU_IPC_SERVICE_SHARED_IMAGE_STUB_H_
 
+#include <vector>
+
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "build/build_config.h"
@@ -58,6 +60,14 @@ class GPU_IPC_SERVICE_EXPORT SharedImageStub {
   }
   const scoped_refptr<gpu::GpuChannelSharedImageInterface>&
   shared_image_interface();
+
+#if BUILDFLAG(IS_MAC)
+  // Waits asynchronously for the latest ANGLE/Metal write-completion events
+  // associated with the IOSurface SharedImages identified by |mailboxes|.
+  void WaitForMetalSharedEvents(const std::vector<Mailbox>& mailboxes,
+                                int32_t frame_index,
+                                base::OnceClosure callback);
+#endif
 
 #if BUILDFLAG(IS_WIN)
   void CopyToGpuMemoryBufferAsync(const Mailbox& mailbox,

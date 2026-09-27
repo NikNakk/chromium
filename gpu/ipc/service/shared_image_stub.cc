@@ -26,6 +26,9 @@
 #include "gpu/ipc/service/gpu_channel.h"
 #include "gpu/ipc/service/gpu_channel_manager.h"
 #include "gpu/ipc/service/gpu_channel_shared_image_interface.h"
+#if BUILDFLAG(IS_MAC)
+#include "gpu/ipc/service/metal_shared_event_waiter_mac.h"
+#endif
 #include "ui/gfx/gpu_fence_handle.h"
 #include "ui/gfx/gpu_memory_buffer_handle.h"
 #include "ui/gfx/native_pixmap_handle.h"
@@ -78,6 +81,22 @@ const scoped_refptr<gpu::GpuChannelSharedImageInterface>&
 SharedImageStub::shared_image_interface() {
   return gpu_channel_shared_image_interface_;
 }
+
+#if BUILDFLAG(IS_MAC)
+void SharedImageStub::WaitForMetalSharedEvents(
+    const std::vector<Mailbox>& mailboxes,
+    int32_t frame_index,
+    base::OnceClosure callback) {
+  if (!factory_) {
+    std::move(callback).Run();
+    return;
+  }
+
+  WaitForMetalSharedEventFences(
+      factory_->GetMetalSharedEventFences(mailboxes), frame_index,
+      std::move(callback));
+}
+#endif
 
 std::unique_ptr<SharedImageStub> SharedImageStub::Create(GpuChannel* channel,
                                                          int32_t route_id) {
