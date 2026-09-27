@@ -2314,6 +2314,11 @@ BASE_FEATURE_PARAM(int,
 BASE_FEATURE(kThrottleFullscreenVideoActiveTab,
              base::FEATURE_DISABLED_BY_DEFAULT);
 
+// Browser-owned immersive video playback via an OpenXR runtime is a separate
+// rollout from WebXR/OpenXR support itself.
+BASE_FEATURE(kImmersiveVideoPlaybackViaOpenXr,
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
 // Changes behavior of User-Agent Client Hints to send blank headers when the
 // User-Agent string is overridden, instead of disabling the headers altogether.
 BASE_FEATURE(kUACHOverrideBlank, base::FEATURE_DISABLED_BY_DEFAULT);
