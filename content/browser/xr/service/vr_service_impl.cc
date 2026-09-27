@@ -48,6 +48,7 @@
 #include "device/vr/public/mojom/vr_service.mojom-shared.h"
 #include "device/vr/public/mojom/xr_device.mojom-shared.h"
 #include "device/vr/public/mojom/xr_session.mojom-shared.h"
+#include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/common/permissions/permission_utils.h"
 #include "third_party/blink/public/mojom/permissions/permission_status.mojom-shared.h"
 
@@ -566,8 +567,14 @@ void VRServiceImpl::RequestSession(
   const std::optional<MediaPlayerId>& fullscreen_player =
       web_contents->media_web_contents_observer()
           ->GetFullscreenVideoMediaPlayerId();
+  bool immersive_media_feature_enabled = true;
+#if BUILDFLAG(IS_MAC)
+  immersive_media_feature_enabled = base::FeatureList::IsEnabled(
+      blink::features::kImmersiveVideoPlaybackViaOpenXr);
+#endif
+
   const bool browser_validated_ua_immersive_media =
-      options->is_ua_immersive_media &&
+      options->is_ua_immersive_media && immersive_media_feature_enabled &&
       web_contents->HasActiveEffectivelyFullscreenVideo() &&
       fullscreen_player.has_value() &&
       fullscreen_player->frame_routing_id == render_frame_host_->GetGlobalId();
