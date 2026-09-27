@@ -40,6 +40,7 @@ void WebMProjectionParser::Reset() {
   pose_yaw_ = std::nullopt;
   pose_roll_ = std::nullopt;
   video_projection_type_ = VideoProjectionType::kNone;
+  video_projection_data_.clear();
   video_transformation_ = VideoTransformation();
 }
 
@@ -160,13 +161,14 @@ bool WebMProjectionParser::OnListEnd(int id) {
     } else {
       video_projection_type_ = VideoProjectionType::kEquirect360;
     }
+  } else if (type == kWebMProjectionTypeMesh) {
+    // Preserve the complete Spherical Video V2 mshp payload. The downstream XR
+    // media path parses this into the 3D->UV mesh used to reproject the decoded
+    // frame without relying on site-specific DOM or dimension heuristics.
+    video_projection_type_ = VideoProjectionType::kMesh;
+    video_projection_data_ = projection_private_;
   } else {
-    // Cubemap/Mesh ProjectionPrivate data is currently collapsed to kNone.
-    // In particular,
-    // Spherical Video V2 Mesh projection data contains the complete 3D->UV
-    // mapping needed to render YouTube-style EAC streams generically, without
-    // relying on page DOM heuristics. Do not expose kMesh as a supported
-    // projection until the downstream renderer can consume that mesh.
+    // Cubemap rendering is not wired through VideoSpatialFormat yet.
     video_projection_type_ = VideoProjectionType::kNone;
   }
 
@@ -243,6 +245,10 @@ VideoTransformation WebMProjectionParser::GetVideoTransformation() const {
 
 VideoProjectionType WebMProjectionParser::GetProjectionType() const {
   return video_projection_type_;
+}
+
+const std::vector<uint8_t>& WebMProjectionParser::GetProjectionData() const {
+  return video_projection_data_;
 }
 
 }  // namespace media
