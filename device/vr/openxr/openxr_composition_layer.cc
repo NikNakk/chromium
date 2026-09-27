@@ -4,6 +4,7 @@
 
 #include "device/vr/openxr/openxr_composition_layer.h"
 
+#include <algorithm>
 #include "base/time/time.h"
 #include "device/vr/openxr/openxr_graphics_binding.h"
 #include "device/vr/openxr/openxr_platform.h"
@@ -16,6 +17,24 @@ namespace device {
 // to avoid false positives on slow frames, but short enough to avoid ANR.
 constexpr XrDuration kSwapchainWaitTimeout =
     base::Milliseconds(50).InNanoseconds();
+
+gfx::Size EacEquirectOutputSize(const gfx::Size& atlas_size) {
+  if (atlas_size.IsEmpty()) {
+    return atlas_size;
+  }
+
+  // A 3x2 cubemap atlas contains six faces. Preserve the limiting face
+  // resolution while mapping to the canonical 2:1 equirectangular domain:
+  // 4N x 2N, where N is the smaller effective face dimension. This avoids
+  // stretching the packed source before the EAC shader and avoids throwing
+  // away horizontal angular resolution in the output.
+  const int face_size =
+      std::min(atlas_size.width() / 3, atlas_size.height() / 2);
+  if (face_size <= 0) {
+    return atlas_size;
+  }
+  return gfx::Size(face_size * 4, face_size * 2);
+}
 
 // static
 OpenXrCompositionLayer::Type OpenXrCompositionLayer::GetTypeFromMojomData(
@@ -46,8 +65,20 @@ OpenXrCompositionLayer::OpenXrCompositionLayer(
   // Projection layers will have same size as the base layer, and will
   // be set later.
   if (type_ != Type::kProjection) {
-    SetSwapchainImageSize(gfx::Size(read_only_data().texture_width,
-                                    read_only_data().texture_height));
+    const gfx::Size transfer_size(read_only_data().texture_width,
+                                  read_only_data().texture_height);
+    if (read_only_data().needs_eac_reprojection) {
+      // Keep Blink's SharedImage at the native decoded EAC-atlas size. Only
+      // enlarge/re-shape the runtime target consumed by the Metal reprojection
+      // pass.
+      SetTransferSize(transfer_size);
+      SetSwapchainImageSize(EacEquirectOutputSize(transfer_size));
+      DVLOG(1) << __func__ << ": EAC transfer="
+               << transfer_size.ToString() << " output="
+               << GetSwapchainImageSize().ToString();
+    } else {
+      SetSwapchainImageSize(transfer_size);
+    }
   }
 }
 
@@ -260,8 +291,12 @@ void OpenXrCompositionLayer::UpdateActiveSwapchainImageSize(
 
 const gfx::Rect OpenXrCompositionLayer::GetSubImageViewport(
     XrEyeVisibility eye) const {
-  gfx::Rect info{0, 0, static_cast<int>(read_only_data().texture_width),
-                 static_cast<int>(read_only_data().texture_height)};
+  const gfx::Size submitted_size =
+      read_only_data().needs_eac_reprojection
+          ? swapchain_image_size_
+          : gfx::Size(read_only_data().texture_width,
+                      read_only_data().texture_height);
+  gfx::Rect info{0, 0, submitted_size.width(), submitted_size.height()};
 
   // When force_mono_presentation is true, the eye will be
   // XR_EYE_VISIBILITY_BOTH, and we will still respect the layout and only use
