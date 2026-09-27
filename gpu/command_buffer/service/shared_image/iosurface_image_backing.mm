@@ -1940,7 +1940,7 @@ void IOSurfaceImageBacking::AddSharedEventForEndAccess(
                         "new_event", inserted);
   }
 #endif
-
+}
 
 void IOSurfaceImageBacking::ProcessSharedEventsForBeginAccess(
     bool readonly,
