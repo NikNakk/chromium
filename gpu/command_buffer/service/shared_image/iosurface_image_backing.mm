@@ -1230,6 +1230,7 @@ SharedImageBackingType IOSurfaceImageBacking::GetType() const {
   return SharedImageBackingType::kIOSurface;
 }
 
+#if BUILDFLAG(IS_MAC)
 std::vector<gfx::MTLSharedEventFence>
 IOSurfaceImageBacking::GetExclusiveSharedEventFences() {
   AutoLock auto_lock(this);
@@ -1241,6 +1242,7 @@ IOSurfaceImageBacking::GetExclusiveSharedEventFences() {
   }
   return fences;
 }
+#endif
 
 std::unique_ptr<GLTextureImageRepresentation>
 IOSurfaceImageBacking::ProduceGLTexture(SharedImageManager* manager,

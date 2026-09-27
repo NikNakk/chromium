@@ -19,7 +19,9 @@
 #include "gpu/config/gpu_preferences.h"
 #include "gpu/gpu_gles2_export.h"
 #include "ui/gl/buildflags.h"
+#if BUILDFLAG(IS_MAC)
 #include "ui/gfx/mac/mtl_shared_event_fence.h"
+#endif
 #include "ui/gl/gl_context.h"
 #include "ui/gl/gl_fence.h"
 #include "ui/gl/gl_surface.h"
@@ -205,9 +207,11 @@ class GPU_GLES2_EXPORT IOSurfaceImageBacking
       uint64_t client_tracing_id) override;
   SharedImageBackingType GetType() const override;
 
+#if BUILDFLAG(IS_MAC)
   // Returns a retained snapshot of the Metal completion events recorded for
   // the most recent exclusive (write) access to this IOSurface.
   std::vector<gfx::MTLSharedEventFence> GetExclusiveSharedEventFences();
+#endif
 
   std::unique_ptr<GLTextureImageRepresentation> ProduceGLTexture(
       SharedImageManager* manager,

@@ -12,6 +12,7 @@
 #include <utility>
 
 #include "base/apple/scoped_nsobject.h"
+#include "base/check.h"
 #include "base/functional/bind.h"
 #include "base/logging.h"
 #include "base/memory/no_destructor.h"
@@ -159,8 +160,7 @@ void WaitForMetalSharedEventFences(
     scoped_refptr<MetalSharedEventWaitState> retained_state = state;
     [event notifyListener:listener
                   atValue:value
-                    block:^(id<MTLSharedEvent> shared_event,
-                            uint64_t signaled_value) {
+                    block:^(id<MTLSharedEvent>, uint64_t) {
                       retained_state->FenceFired();
                     }];
   }
