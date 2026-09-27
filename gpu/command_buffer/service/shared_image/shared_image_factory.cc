@@ -80,10 +80,6 @@
 #include "gpu/command_buffer/service/shared_image/iosurface_image_backing_factory.h"
 #endif
 
-#if BUILDFLAG(IS_MAC)
-#include "gpu/command_buffer/service/shared_image/iosurface_image_backing.h"
-#endif
-
 #if BUILDFLAG(IS_WIN)
 #include "gpu/command_buffer/service/dxgi_shared_handle_manager.h"
 #include "gpu/command_buffer/service/shared_image/d3d_image_backing_factory.h"
@@ -1226,15 +1222,7 @@ SharedImageFactory::GetMetalSharedEventFences(
     }
 
     SharedImageBacking* backing = shared_image->backing();
-    if (backing->GetType() != SharedImageBackingType::kIOSurface) {
-      DVLOG(2) << __func__ << ": non-IOSurface backing "
-               << backing->GetName();
-      continue;
-    }
-
-    auto* iosurface_backing = static_cast<IOSurfaceImageBacking*>(backing);
-    auto backing_fences =
-        iosurface_backing->GetExclusiveSharedEventFences();
+    auto backing_fences = backing->GetExclusiveSharedEventFences();
     fences.insert(fences.end(),
                   std::make_move_iterator(backing_fences.begin()),
                   std::make_move_iterator(backing_fences.end()));
