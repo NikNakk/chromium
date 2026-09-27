@@ -82,9 +82,15 @@ void XRMediaDrawingContext::OnFrameStart() {
   }
 
   const gfx::Size current_video_size(video_->videoWidth(), video_->videoHeight());
+  const int64_t current_pixels =
+      static_cast<int64_t>(current_video_size.width()) *
+      current_video_size.height();
+  const int64_t layer_source_pixels =
+      static_cast<int64_t>(source_video_size_.width()) *
+      source_video_size_.height();
   if (!current_video_size.IsEmpty() &&
-      current_video_size != source_video_size_) {
-    DVLOG(1) << "XR media decoded size changed from "
+      current_pixels > layer_source_pixels) {
+    DVLOG(1) << "XR media decoded resolution increased from "
              << source_video_size_.ToString() << " to "
              << current_video_size.ToString();
     if (size_changed_callback_) {

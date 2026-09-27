@@ -1220,7 +1220,12 @@ XREquirectLayer* XRSystem::CreateImmersiveMediaLayer(
 }
 
 void XRSystem::ScheduleImmersiveMediaLayerResize(gfx::Size decoded_size) {
-  if (decoded_size.IsEmpty() || decoded_size == immersive_media_video_size_ ||
+  const int64_t decoded_pixels =
+      static_cast<int64_t>(decoded_size.width()) * decoded_size.height();
+  const int64_t current_layer_pixels =
+      static_cast<int64_t>(immersive_media_video_size_.width()) *
+      immersive_media_video_size_.height();
+  if (decoded_size.IsEmpty() || decoded_pixels <= current_layer_pixels ||
       !immersive_media_session_ || !immersive_media_video_ ||
       immersive_media_resize_task_pending_) {
     return;
@@ -1243,7 +1248,12 @@ void XRSystem::ApplyImmersiveMediaLayerResize() {
 
   const gfx::Size decoded_size(immersive_media_video_->videoWidth(),
                                immersive_media_video_->videoHeight());
-  if (decoded_size.IsEmpty() || decoded_size == immersive_media_video_size_) {
+  const int64_t decoded_pixels =
+      static_cast<int64_t>(decoded_size.width()) * decoded_size.height();
+  const int64_t current_layer_pixels =
+      static_cast<int64_t>(immersive_media_video_size_.width()) *
+      immersive_media_video_size_.height();
+  if (decoded_size.IsEmpty() || decoded_pixels <= current_layer_pixels) {
     return;
   }
 
