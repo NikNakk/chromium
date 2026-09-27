@@ -19,12 +19,13 @@ namespace media {
 // values and MP4's st3d) support a wide variety of stereoscopic layouts, we
 // only define and support a subset here:
 // - kMono: Standard 2D flat video.
-// - kSideBySideLeftFirst / kTopBottomLeftFirst: These are the standard and most
-//   common formats used for modern VR and 3D video delivery.
+// - kSideBySideLeftFirst / kTopBottomLeftFirst: Standard packed stereo.
+// - kStereoCustom: Per-eye mapping is supplied by projection metadata, such as
+//   two Spherical Video V2 mesh boxes.
 //
 // Obsolete, legacy hardware-specific layouts (such as checkerboard, row/column
 // interleaved, and laced formats), rendering-time effects (such as anaglyph),
-// and custom, unrecognized, or unsupported layouts are mapped to kMono.
+// and other unrecognized or unsupported layouts are mapped to kMono.
 enum class VideoStereoMode {
   kMono = 0,
   kSideBySideLeftFirst,
