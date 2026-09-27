@@ -146,6 +146,16 @@ void PictureInPictureServiceImpl::StartSessionImmersive(
     return;
   }
 
+  // The platform immersive-player path does not understand arbitrary
+  // projection meshes. Do not reinterpret them as a flat quad (or custom
+  // stereo as mono); the macOS OpenXR path consumes this metadata separately.
+  if (pending_session->spatial_format.projection_type ==
+          media::VideoProjectionType::kMesh ||
+      pending_session->spatial_format.stereo_mode ==
+          media::VideoStereoMode::kStereoCustom) {
+    return;
+  }
+
   auto map_stereo_mode = [](media::VideoStereoMode mode) {
     switch (mode) {
       case media::VideoStereoMode::kMono:
