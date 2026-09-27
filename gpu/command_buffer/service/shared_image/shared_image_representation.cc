@@ -1101,6 +1101,13 @@ SharedImageRepresentationFactoryRef::~SharedImageRepresentationFactoryRef() {
   }
 }
 
+#if BUILDFLAG(IS_MAC)
+std::vector<gfx::MTLSharedEventFence>
+SharedImageRepresentationFactoryRef::GetExclusiveSharedEventFences() {
+  return backing()->GetExclusiveSharedEventFences();
+}
+#endif
+
 ///////////////////////////////////////////////////////////////////////////////
 // MemoryImageRepresentation
 
