@@ -572,13 +572,15 @@ fragment float4 xr_eac_fragment(
     data.mesh_initialized = true;
 
     const auto& projection_data = layer.read_only_data().media_projection_data;
-    auto meshes = ParseSphericalVideoMesh(base::span<const uint8_t>(projection_data));
-    if (!meshes || meshes->size() != 1) {
-      DLOG(ERROR) << "Failed to parse supported single-view spherical mesh";
+    auto meshes =
+        ParseSphericalVideoMesh(base::span<const uint8_t>(projection_data));
+    if (!meshes) {
+      DLOG(ERROR) << "Failed to parse spherical video mesh";
       return false;
     }
 
-    auto render_vertices = BuildMeshRenderVertices(meshes->front());
+    auto render_vertices =
+        BuildMeshRenderVertices(*meshes, layer.read_only_data().layout);
     if (!render_vertices || render_vertices->empty()) {
       DLOG(ERROR) << "Failed to build equirectangular render mesh";
       return false;
