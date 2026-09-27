@@ -852,6 +852,11 @@ struct XRLayerReadOnlyData {
   // The source texture contains YouTube-style Equi-Angular Cubemap packing
   // and must be reprojected before being submitted as an equirect layer.
   bool needs_eac_reprojection;
+
+  // Projection-private metadata for a browser-owned immersive media layer.
+  // Spherical Video V2 mesh projection data is carried here unchanged and is
+  // parsed by the isolated XR service when the layer is created.
+  array<uint8> media_projection_data;
 };
 
 // Mutable layer data. It is used to created a layer,
