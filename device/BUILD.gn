@@ -440,6 +440,12 @@ test("device_unittests") {
       ]
       deps += [ "//third_party/openxr:openxr_core_headers" ]
 
+      if (is_mac) {
+        sources += [
+          "vr/openxr/spherical_video_mesh_parser_unittest.cc",
+        ]
+      }
+
       if (is_linux) {
         # The Linux OpenXR unittests link the OpenXR loader, which is only
         # visible to //device/vr/*. They live in a dedicated source_set under
