@@ -120,6 +120,8 @@ component("service") {
     if (is_mac) {
       sources += [
         "image_transport_surface_mac.mm",
+        "metal_shared_event_waiter_mac.h",
+        "metal_shared_event_waiter_mac.mm",
       ]
       deps += [
         "//ui/display",
@@ -129,6 +131,7 @@ component("service") {
       frameworks = [
         "CoreGraphics.framework",
         "IOSurface.framework",
+        "Metal.framework",
         "OpenGL.framework",
         "QuartzCore.framework",
       ]

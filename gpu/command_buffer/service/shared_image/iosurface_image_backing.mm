@@ -1230,6 +1230,18 @@ SharedImageBackingType IOSurfaceImageBacking::GetType() const {
   return SharedImageBackingType::kIOSurface;
 }
 
+std::vector<gfx::MTLSharedEventFence>
+IOSurfaceImageBacking::GetExclusiveSharedEventFences() {
+  AutoLock auto_lock(this);
+
+  std::vector<gfx::MTLSharedEventFence> fences;
+  fences.reserve(exclusive_shared_events_.size());
+  for (const auto& [shared_event, signal_value] : exclusive_shared_events_) {
+    fences.emplace_back(shared_event.get(), signal_value);
+  }
+  return fences;
+}
+
 std::unique_ptr<GLTextureImageRepresentation>
 IOSurfaceImageBacking::ProduceGLTexture(SharedImageManager* manager,
                                         MemoryTypeTracker* tracker) {

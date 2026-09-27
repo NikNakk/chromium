@@ -28,6 +28,9 @@
 #include "gpu/gpu_gles2_export.h"
 #include "gpu/ipc/common/shared_image_pool_client_interface.mojom.h"
 #include "gpu/ipc/common/surface_handle.h"
+#if BUILDFLAG(IS_MAC)
+#include "ui/gfx/mac/mtl_shared_event_fence.h"
+#endif
 #include "third_party/abseil-cpp/absl/container/flat_hash_map.h"
 #include "ui/gfx/buffer_types.h"
 #include "ui/gfx/gpu_extra_info.h"
@@ -188,6 +191,13 @@ class GPU_GLES2_EXPORT SharedImageFactory {
 
   base::WeakPtr<SharedImageFactory> GetWeakPtr();
   scoped_refptr<SharedImageFactoryRef> GetFactoryRef();
+
+#if BUILDFLAG(IS_MAC)
+  // Returns the latest ANGLE/Metal write-completion fences recorded by the
+  // IOSurface backings for |mailboxes|. Non-IOSurface mailboxes are ignored.
+  std::vector<gfx::MTLSharedEventFence> GetMetalSharedEventFences(
+      const std::vector<Mailbox>& mailboxes);
+#endif
 
  private:
   friend class CompoundImageBacking;

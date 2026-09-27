@@ -79,6 +79,10 @@
 #include "gpu/command_buffer/service/shared_image/iosurface_image_backing_factory.h"
 #endif
 
+#if BUILDFLAG(IS_MAC)
+#include "gpu/command_buffer/service/shared_image/iosurface_image_backing.h"
+#endif
+
 #if BUILDFLAG(IS_WIN)
 #include "gpu/command_buffer/service/dxgi_shared_handle_manager.h"
 #include "gpu/command_buffer/service/shared_image/d3d_image_backing_factory.h"
@@ -1207,6 +1211,37 @@ SharedImageUsageSet SharedImageFactory::GetUsageForMailbox(
   auto* shared_image = GetFactoryRef(mailbox);
   return shared_image ? shared_image->usage() : SharedImageUsageSet();
 }
+
+#if BUILDFLAG(IS_MAC)
+std::vector<gfx::MTLSharedEventFence>
+SharedImageFactory::GetMetalSharedEventFences(
+    const std::vector<Mailbox>& mailboxes) {
+  std::vector<gfx::MTLSharedEventFence> fences;
+  for (const auto& mailbox : mailboxes) {
+    auto* shared_image = GetFactoryRef(mailbox);
+    if (!shared_image) {
+      DVLOG(2) << __func__ << ": mailbox no longer registered";
+      continue;
+    }
+
+    SharedImageBacking* backing = shared_image->backing();
+    if (backing->GetType() != SharedImageBackingType::kIOSurface) {
+      DVLOG(2) << __func__ << ": non-IOSurface backing "
+               << backing->GetName();
+      continue;
+    }
+
+    auto* iosurface_backing = static_cast<IOSurfaceImageBacking*>(backing);
+    auto backing_fences =
+        iosurface_backing->GetExclusiveSharedEventFences();
+    fences.insert(fences.end(),
+                  std::make_move_iterator(backing_fences.begin()),
+                  std::make_move_iterator(backing_fences.end()));
+  }
+
+  return gfx::MTLSharedEventFence::Reduce(std::move(fences));
+}
+#endif
 
 SharedImageRepresentationFactoryRef* SharedImageFactory::GetFactoryRef(
     const gpu::Mailbox& mailbox) const {
