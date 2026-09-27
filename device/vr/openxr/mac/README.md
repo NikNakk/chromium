@@ -1,12 +1,13 @@
 # macOS OpenXR / WebXR port
 
-This document describes the macOS OpenXR/WebXR port in this Chromium fork and
-its relationship with Monado, PSVR2, and SwiftXR Shell.
+This document describes the macOS OpenXR/WebXR implementation in this Chromium
+fork and its relationship with Monado, PSVR2, and other macOS OpenXR runtimes.
 
-The design keeps Chromium narrow: it behaves as a normal desktop browser until
-a page explicitly requests an immersive WebXR session. SwiftXR Shell remains
-the headset home/dashboard/desktop environment and yields presentation while an
-external OpenXR application is active.
+The development branch is:
+
+```text
+macos-openxr-webxr
+```
 
 ## Runtime architecture
 
@@ -20,25 +21,26 @@ Chromium isolated XR service
 XR_KHR_metal_enable
       |
       v
-Monado OpenXR client
+runtime-owned MTLTexture
       |
-      +---- ordinary Monado IPC ----------> monado-service
+      +-- IOSurface-backed? -- yes --> Chromium standard IOSurface SharedImage
+      |                                (zero-copy)
       |
-      +---- Metal-handle XPC side channel > monado-service
-                                             |
-                                             v
-                                           PSVR2
+      +-- no -----------------------> Chromium-owned IOSurface
+                                       + Metal copy fallback
+      |
+      v
+OpenXR runtime / compositor
 ```
 
-Chromium does not implement Monado's XPC protocol. It calls a deliberately tiny
-C helper exported by Monado; the helper owns all NSXPC and
-`MTLSharedTextureHandle` handling.
+For Monado, simple single-slice BGRA swapchains are now IOSurface-backed in the
+runtime. Chromium therefore needs no Monado-specific transport in its GPU
+process. Array/depth/other swapchains remain a Monado implementation detail and
+may continue to use Monado's existing Metal shared-handle/XPC path.
 
-The development branch is:
-
-```text
-macos-openxr-webxr
-```
+The XR service still loads the OpenXR runtime normally and may therefore need
+runtime-specific sandbox allowances. The GPU process does not load Monado's
+Metal helper dylib and has no Monado Mach-service allowance.
 
 ## Session binding
 
@@ -48,251 +50,265 @@ It:
 
 1. calls `xrGetMetalGraphicsRequirementsKHR`;
 2. uses the exact `MTLDevice` returned by the runtime;
-3. creates an `MTLCommandQueue` from that device;
-4. passes it with `XrGraphicsBindingMetalKHR`;
+3. creates an `MTLCommandQueue` on that device;
+4. passes it in `XrGraphicsBindingMetalKHR`;
 5. negotiates BGRA8 Metal swapchain formats;
 6. enumerates `XrSwapchainImageMetalKHR` textures.
 
-The exact runtime device matters because the current Monado Metal binding
-validates the command queue against the device returned in the graphics
-requirements.
-
-The first-pass formats are:
+The current preferred formats are:
 
 ```text
 MTLPixelFormatBGRA8Unorm_sRGB
 MTLPixelFormatBGRA8Unorm
 ```
 
-Chromium's existing projection-layer layout is retained: the two views occupy
-one double-wide 2D swapchain image. The OpenXR swapchain therefore currently
-uses `arraySize = 1`, and both projection views use `imageArrayIndex = 0`.
+Chromium's base projection swapchain is currently a double-wide 2D image with
+`arraySize = 1`; both projection views use `imageArrayIndex = 0`.
 
-## Direct Metal SharedImage transport
+## IOSurface SharedImage transport
 
-The old proposed IOSurface/intermediate-texture/blit path is no longer the
-preferred implementation. Monado's macOS service path already supports shared
-Metal textures across process boundaries, so Chromium can render directly into
-the same Metal allocation used by the OpenXR swapchain.
+### Monado
 
-The implemented path is:
+For eligible Metal swapchains Monado's service path now uses its existing
+native compositor allocation path. The Vulkan compositor creates native images
+backed by IOSurface storage, ordinary Monado IPC transports retained IOSurface
+handles back to the Metal client, and the client wraps each surface on the
+application's `MTLDevice` with:
+
+```objc
+-[MTLDevice newTextureWithDescriptor:iosurface:plane:]
+```
+
+The resulting `XrSwapchainImageMetalKHR.texture` therefore has a non-null
+`texture.iosurface`.
+
+The IOSurface path is selected only for simple single-plane 2D colour
+swapchains. Array/depth/unsupported swapchains keep Monado's existing
+MTLSharedTextureHandle/XPC path, so clients such as Godot that use
+`arraySize = 2` are unchanged.
+
+### Chromium
+
+`OpenXrGraphicsBindingMetal::CreateSharedImages()` checks the runtime texture
+directly. When `texture.iosurface != nil`, and the IOSurface dimensions match
+the OpenXR swapchain dimensions, Chromium creates a SharedImage from that
+*existing* IOSurface using the normal `gfx::GpuMemoryBufferHandle` path.
+
+This lands in Chromium's standard `IOSurfaceImageBacking` rather than a custom
+OpenXR backing:
 
 ```text
-XR service process                         GPU process
-------------------                         -----------
-
 XrSwapchainImageMetalKHR.texture
         |
-        | Monado helper:
-        | publish_claimable_texture()
         v
-opaque uint64 token
+texture.iosurface
         |
-        +--------------- Mojo --------------------+
-                                                    |
-                                                    v
-                                      Monado helper:
-                                      take_texture_on_device()
-                                                    |
-                                  Monado XPC side channel
-                                                    |
-                                                    v
-                                  shared MTLTexture on ANGLE's
-                                  exact MTLDevice
-                                                    |
-                                                    v
-                                  EGL_METAL_TEXTURE_ANGLE
-                                                    |
-                                                    v
-                                      Chromium SharedImage
-                                                    |
-                                                    v
-                                         Blink / WebGL
+        v
+gfx::GpuMemoryBufferHandle
+        |
+        v
+IOSurfaceImageBacking
+        |
+        v
+Blink / ANGLE / WebGL
 ```
 
-No `MTLSharedTextureHandle`, Objective-C XPC object, IOSurface, or Mach port is
-sent through Chromium Mojo. Mojo carries only the opaque token plus the selected
-array slice.
+No replacement IOSurface is allocated for this path, so Blink renders directly
+into the storage used by the OpenXR swapchain.
 
-### Why the receiving Metal device is explicit
+The SharedImage retains the usage flags used by the existing WebXR path and
+matches the SharedImage colour space to the negotiated Metal format. In
+particular, `MTLPixelFormatBGRA8Unorm_sRGB` is represented as sRGB rather than
+linear storage.
 
-ANGLE's `EGL_ANGLE_metal_texture_client_buffer` requires an imported
-`MTLTexture` to belong to the exact `MTLDevice` backing ANGLE's EGL display.
+### Runtime-neutral fallback
 
-The GPU process therefore obtains that device from Chromium's
-`GLDisplayEGL::GetMetalDevice()` and passes it to the Monado helper. Monado
-recreates the shared texture with that receiving device before Chromium creates
-the EGLImage. This avoids relying on `MTLSharedTextureHandle.device` happening
-to return the same Objective-C device object.
-
-### SharedImage backing
-
-The GPU service has a macOS path that registers an externally supplied EGLImage
-with Chromium's existing `EGLImageBacking`. ANGLE creates that EGLImage with:
+If the runtime texture is not IOSurface-backed, or the IOSurface dimensions do
+not match the swapchain, Chromium retains the copy fallback:
 
 ```text
-target: EGL_METAL_TEXTURE_ANGLE
-context: EGL_NO_CONTEXT
-buffer: receiving-process MTLTexture
-attribute: EGL_METAL_TEXTURE_ARRAY_SLICE_ANGLE
-```
-
-The current base projection swapchain is a normal 2D texture and uses slice 0.
-The slice is still explicit in the transport so a future array-backed layer can
-select a layer without changing the Mojo contract.
-
-The backing then uses Chromium's ordinary mailbox/export/WebGL machinery. Blink
-therefore renders directly into the OpenXR swapchain allocation rather than
-rendering an intermediate texture which Chromium later copies.
-
-### WebGL vertical orientation
-
-The direct WebGL texture reaches OpenXR with WebGL's usual vertical orientation.
-Chromium's existing OpenXR projection code corrects this by inverting the
-projection FOV when the composition-layer image-layout extension is not being
-used. For a direct SharedImage session, the runtime must therefore advertise
-`fovMutable = XR_TRUE`. The macOS port applies the same capability check used
-by Chromium's Windows direct-SharedImage path and fails session creation early
-when a mandatory direct path cannot be used.
-
-## Monado helper ABI
-
-Chromium dynamically loads:
-
-```text
-/usr/local/lib/libmonado_metal_xpc_client.dylib
-```
-
-The helper intentionally exposes only a small C ABI:
-
-```text
-monado_metal_xpc_publish_claimable_texture(...)
-monado_metal_xpc_take_texture_on_device(...)
-monado_metal_xpc_release_texture(...)
-```
-
-The corresponding Monado branch builds and installs this helper. Chromium's
-macOS GPU sandbox and dedicated XR-compositing sandbox permit executable mapping
-of this single installed dylib and Mach lookup of only:
-
-```text
-org.freedesktop.monado.metal-ipc
-```
-
-There is deliberately no arbitrary helper-path environment override: such a
-path would not be usable inside the sandbox without broadening its filesystem
-policy. Other macOS utility services retain their normal sandbox and do not gain
-access to the Monado helper or Mach service.
-
-For development, install the Monado build with an install prefix that places
-the helper at the path above (the current Chromium port expects
-`/usr/local/lib`).
-
-When `XR_RUNTIME_JSON` is set, Chromium's browser process also passes the
-canonical parent directory of that manifest into the dedicated XR sandbox as
-an optional read/execute allowance. This is specifically for development builds:
-the OpenXR loader can read the selected manifest and load a runtime/library from
-the same Monado build tree without opening the rest of the user's home
-directory. Installed runtime discovery does not need this development
-allowance.
-
-## Token ownership
-
-Normal Monado Metal-XPC tokens remain PID scoped. Those ordinary tokens retain
-their legacy 32-bit-compatible layout. Chromium's claimable handoff uses a
-separate 64-bit token namespace with 56 random bits, since it travels through
-Mojo rather than the legacy Monado image-metadata field.
-
-Chromium needs one special handoff because the OpenXR runtime is used from the
-isolated XR process while the SharedImage is constructed in Chromium's GPU
-process. Monado therefore supports an explicitly **claimable texture token**:
-
-1. the XR process publishes the texture and owns the token;
-2. it explicitly marks that texture token claimable;
-3. the first different PID that retrieves it becomes the new owner;
-4. the claimable marker is removed immediately;
-5. the token is PID scoped again to the receiving process;
-6. texture retrieval consumes/discards the token.
-
-This is narrower than making all Monado texture tokens globally retrievable.
-The existing PID-scoped service/client path is unchanged for ordinary OpenXR
-applications.
-
-## Synchronization
-
-Pixel transport is zero-copy, but synchronization is still required.
-
-After Blink finishes exporting the SharedImage, Chromium receives the renderer's
-GPU `SyncToken`. On macOS the OpenXR render loop now waits for those tokens
-asynchronously with `SharedImageInterface::SignalSyncToken()`.
-
-Only after the GPU write is complete does Chromium continue the normal OpenXR
-submission path and release the acquired swapchain image.
-
-```text
-Blink/ANGLE write
+Blink / ANGLE
       |
       v
-Chromium GPU SyncToken
+Chromium-owned IOSurface SharedImage
       |
       v
-asynchronous SignalSyncToken completion
+Metal blit / scale / EAC reprojection
+      |
+      v
+runtime-owned OpenXR MTLTexture
+```
+
+This is the expected path for runtimes such as Meta XR Simulator.
+
+The same renderer-completion barrier described below runs before
+`RenderLayer()`, so the fallback never reads the source IOSurface before
+ANGLE has actually finished writing it. The fallback currently keeps its
+conservative Metal-command-buffer completion wait after the copy before the
+runtime texture is released; that is separate from renderer-to-IOSurface
+synchronization.
+
+## GPU completion and swapchain release
+
+A Chromium `SyncToken` becoming signalled only guarantees that the GPU process
+has processed/scheduled the renderer commands. It does not guarantee that
+Metal has finished writing an IOSurface which another process or queue can
+immediately read.
+
+Chromium already has the required lower-level primitive:
+`IOSurfaceImageBacking::IOSurfaceBackingEGLStateEndAccess()` calls
+`GLDisplayEGL::CreateMetalSharedEvent()` for ANGLE/Metal writes and records
+the resulting `(MTLSharedEvent, value)` in the backing.
+
+The macOS WebXR submission path now reuses that event:
+
+```text
+Blink ends SharedImage GL write access
+      |
+      v
+IOSurfaceImageBacking::EndAccess
+      |
+      +--> ANGLE enqueues MTLSharedEvent signal after its Metal writes
+      |
+      v
+renderer SyncToken
+      |
+      v
+GPU scheduler waits for SyncToken
+      |
+      v
+snapshot IOSurface write-completion fences
+      |
+      v
+MTLSharedEventListener on dedicated dispatch queue
+      |
+      v
+event value reached
+      |
+      v
+Mojo reply to XR service
+      |
+      v
+RenderLayer() / fallback source read
       |
       v
 xrReleaseSwapchainImage / xrEndFrame
-      |
-      v
-Monado's existing app <-> compositor synchronization
 ```
 
-This avoids:
+The event wait is asynchronous; no `glFinish()` and no CPU thread waits on
+Metal completion.
 
-- `glFinish()`;
-- CPU pixel copies;
-- a Metal blit into another OpenXR texture;
-- duplicating Monado's shared-event/XPC synchronization protocol in Chromium.
+A 250 ms safety timeout prevents a lost context/GPU event from permanently
+wedging the XR submission path. It is logged only at DVLOG level. In-flight
+callbacks use weak pointers on both the GPU-channel and XR-render-loop sides so
+session exit, context loss, and GPU-channel teardown do not produce late
+submission callbacks.
+
+Trace events are emitted for:
+
+```text
+OpenXRSyncTokenSignaled
+OpenXRMetalSharedEventFired
+OpenXRMetalSharedEventTimeout
+OpenXRSwapchainReleased
+```
+
+Each carries the WebXR frame index, so renderer-submit-to-GPU-completion and
+GPU-completion-to-OpenXR-release latency can be measured in a trace.
+
+Passing the `MTLSharedEvent` itself into Monado's compositor is deliberately
+out of scope for this implementation. Doing that would require exporting the
+event across the XR-runtime/service process boundary (for Monado, most likely
+through its existing XPC shared-event machinery) and making the compositor
+perform a GPU-side wait. That could remove the CPU notification round trip if
+trace measurements show it is material.
+
+## WebGL orientation and layers
+
+Metal's image origin differs from Chromium's ordinary OpenXR composition
+orientation. The macOS binding applies the platform flip only when the Blink
+layer itself has not already requested a Y inversion:
+
+```text
+ordinary WebXR layer: flip_y = false -> Metal/OpenXR flip applied
+media layer:          flip_y = true  -> no extra platform flip
+```
+
+The macOS binding supports the existing Chromium 2D composition-layer
+transport for projection, quad, cylinder, and equirect layers. Browser-native
+spatial video uses the same layer plumbing.
+
+For spatial video, equirectangular 180/360 metadata uses the direct equirect
+layer path. YouTube EAC compatibility currently uses a Metal EAC-to-equirect
+GPU reprojection before submission.
+
+## Browser-owned immersive media
+
+The browser-native immersive-media path is implemented on top of normal
+`HTMLVideoElement` / `WebMediaPlayer` decoding. When Chromium recognizes a
+supported spatial projection, decoded frames feed an XR media drawing context
+and composition layer rather than a site-specific downloader/player.
+
+The privileged UA-owned immersive-media bypass is browser-validated: the
+browser verifies that the requesting frame is in fullscreen and has an active
+effectively-fullscreen video before skipping the normal transient activation /
+origin VR permission checks. Blink's renderer-provided flag is not sufficient
+by itself.
+
+The old SwiftXR Shell localhost handoff is no longer part of Chromium's generic
+session-creation code. Presentation ownership/yielding belongs in the runtime
+or shell layer.
 
 ## WebGL and WebGPU
 
-The first direct path is intentionally **WebGL only**.
+The working path is WebGL/ANGLE.
 
-Chromium's `EGLImageBacking` can expose the external Metal texture through GL
-representations, which is sufficient for the current WebGL WebXR path.
-Chromium's Dawn/Metal SharedImage representation does not currently import this
-external `EGL_METAL_TEXTURE_ANGLE` backing.
+The IOSurface migration makes WebGPU more feasible because
+`IOSurfaceImageBacking` already has a Dawn/Metal representation and already
+tracks Dawn-produced `MTLSharedEvent` fences. WebGPU WebXR is not enabled by
+this change.
 
-The macOS OpenXR binding therefore does not advertise SharedImage support for a
-WebGPU XR session. WebGPU can be added later with a native Dawn/Metal external
-texture representation rather than by pretending the current GL representation
-works.
+A follow-on WebGPU implementation would need to:
+
+1. allow the macOS OpenXR binding to advertise SharedImages for WebGPU;
+2. add the appropriate `SHARED_IMAGE_USAGE_WEBGPU_READ/WRITE` usages;
+3. ensure the XR WebGPU frame transport imports the same IOSurface backing into
+   Dawn on the runtime's Metal device;
+4. propagate Dawn `EndAccess` shared-event fences through the same XR
+   completion wait;
+5. verify texture-format/view-format and colour-space handling for the OpenXR
+   swapchain;
+6. exercise projection and WebXR Layers paths under Dawn before removing the
+   current WebGPU guard.
+
+No Monado-specific GPU-process transport should be needed for that work.
 
 ## Current scope
 
-The first usable milestone supports:
+Implemented on this branch:
 
-- immersive OpenXR session creation on macOS;
-- native Metal OpenXR binding;
-- one double-wide projection layer;
-- BGRA8 swapchains;
-- direct shared-Metal rendering for WebGL;
-- asynchronous GPU completion before OpenXR release;
-- normal OpenXR session exit.
+- immersive OpenXR sessions on macOS;
+- `XR_KHR_metal_enable`;
+- BGRA8/sRGB Metal swapchains;
+- standard IOSurface SharedImage zero-copy for IOSurface-backed runtime
+  swapchains;
+- runtime-neutral IOSurface + Metal-copy fallback;
+- asynchronous renderer GPU completion using ANGLE Metal shared events;
+- projection and WebXR 2D composition layers;
+- browser-native equirectangular spatial-video playback;
+- YouTube EAC reprojection compatibility;
+- clean normal session exit/re-entry.
 
-Not yet implemented in this transport milestone:
+Not yet implemented or intentionally out of scope:
 
 - WebGPU WebXR;
-- Chromium overlay composition over the direct OpenXR texture;
-- general WebXR Layers support;
-- a browser-native XR home/dashboard;
+- GPU-side cross-process shared-event waiting in Monado;
+- a generic browser XR home/dashboard;
 - privileged multi-client dashboard overlays.
-
-Those are independent follow-on features and should not be folded into the
-basic pixel-transport path.
 
 ## Development runtime selection
 
-During development Chromium can use the normal OpenXR loader and
-`XR_RUNTIME_JSON`, for example:
+Chromium uses the normal OpenXR loader and `XR_RUNTIME_JSON`, for example:
 
 ```sh
 XR_RUNTIME_JSON=/path/to/openxr_monado.json \
@@ -302,58 +318,42 @@ out/mac-webxr/Chromium.app/Contents/MacOS/Chromium \
   --no-first-run
 ```
 
-Before starting Chromium, ensure that:
-
-- the matching Monado runtime/client build is selected;
-- `libmonado_metal_xpc_client.dylib` is installed at
-  `/usr/local/lib/libmonado_metal_xpc_client.dylib`;
-- the launchd/direct Monado Metal XPC service is registered as described in the
-  Monado macOS service documentation.
+For Monado zero-copy, use a runtime build containing the IOSurface-backed
+single-slice Metal swapchain changes. No Monado helper dylib is required by the
+Chromium GPU process.
 
 ## Bring-up checklist
 
-A useful order for validation is:
-
-1. build/install the Monado direct-XPC branch and helper dylib;
-2. bootstrap the launchd-managed Monado service;
+1. build/install the matching Monado branch;
+2. start `monado-service`;
 3. build Chromium `macos-openxr-webxr`;
 4. confirm `navigator.xr.isSessionSupported("immersive-vr")`;
-5. request a simple WebGL `immersive-vr` session;
-6. confirm Chromium creates/enumerates the Metal OpenXR swapchain;
-7. confirm the XR process publishes one claimable token per swapchain image;
-8. confirm the GPU process claims each token and reconstructs the texture on
-   ANGLE's Metal device;
-9. confirm `EGL_METAL_TEXTURE_ANGLE` image creation succeeds;
-10. confirm frame submission waits for the renderer SyncToken rather than
-    falling back to `glFinish`;
-11. confirm the minimal WebXR sample is visible and head tracked in PSVR2;
-12. end the session and confirm presentation returns cleanly to SwiftXR Shell.
-
-Useful failure signatures are deliberately logged at each boundary: helper
-loading, token publication, token claim, Metal-device reconstruction, EGLImage
-creation, SharedImage creation, and renderer synchronization.
-
-## User-experience model
-
-Outside immersive WebXR, Chromium remains an ordinary browser visible through
-SwiftXR Shell's existing desktop support. A page enters immersive VR only after
-the normal WebXR user gesture and `requestSession("immersive-vr")` flow.
-
-While Chromium owns the immersive OpenXR session, SwiftXR Shell should yield
-foreground presentation. When that session ends, the shell resumes without the
-browser needing to relaunch.
-
-Presentation ownership should remain a generic Monado/SwiftXR concern so the
-same behaviour works for Chromium, Unity, Unreal, Godot, Open Brush, and other
-OpenXR clients.
+5. request a simple WebGL immersive session;
+6. confirm the runtime returns BGRA8 single-slice swapchains;
+7. confirm `XrSwapchainImageMetalKHR.texture.iosurface` is non-null under
+   Monado;
+8. confirm Chromium logs `transport=iosurface-zero-copy` at DVLOG level and
+   does not enter `RenderLayer()`'s copy branch;
+9. confirm the GPU process does not load
+   `libmonado_metal_xpc_client.dylib` and has no Monado sandbox violation;
+10. stress a heavy WebXR scene and inspect the three completion/release trace
+    events above for each frame;
+11. exit while a frame is in flight, then repeatedly enter/exit immersive mode;
+12. test Meta XR Simulator and confirm it still takes the fallback copy path;
+13. test an array-size-2 client such as Godot against Monado and confirm Monado
+    retains its shared-handle path.
 
 ## Design principles
 
-1. Keep Chromium's role standards-compatible and narrow.
-2. Keep XPC/Metal-handle transport inside Monado.
-3. Pass only opaque tokens through Chromium IPC.
-4. Render directly into shared OpenXR Metal storage where possible.
-5. Use Chromium SyncTokens for renderer-to-XR completion.
-6. Reuse Monado's existing compositor synchronization after OpenXR release.
-7. Avoid CPU copies and avoid an unnecessary IOSurface/blit stage.
-8. Keep shell/dashboard ownership in SwiftXR Shell/Monado.
+1. Keep Chromium's OpenXR transport runtime-neutral.
+2. Prefer standard IOSurface/SharedImage mechanisms over runtime-specific GPU
+   process code.
+3. Keep Monado-specific XPC implementation details inside Monado.
+4. Reuse Chromium's existing SharedImage access tracking and Metal shared-event
+   synchronization.
+5. Do not release an OpenXR IOSurface to a different queue/process merely
+   because its renderer SyncToken has been scheduled.
+6. Preserve the fallback for macOS runtimes whose swapchain textures are not
+   IOSurface-backed.
+7. Keep presentation ownership/dashboard policy outside generic Chromium
+   WebXR session creation.
