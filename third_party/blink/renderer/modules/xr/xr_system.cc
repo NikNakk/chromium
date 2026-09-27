@@ -1243,6 +1243,12 @@ void XRSystem::OnImmersiveMediaSessionReturned(
     case media::VideoStereoMode::kTopBottomLeftFirst:
       layout = V8XRLayerLayout::Enum::kStereoTopBottom;
       break;
+    case media::VideoStereoMode::kStereoCustom:
+      // Mesh-defined stereo has no intrinsic packed output layout. Reproject
+      // the two eye-specific meshes into a canonical left-right equirect layer
+      // before handing it to OpenXR.
+      layout = V8XRLayerLayout::Enum::kStereoLeftRight;
+      break;
   }
 
   auto* layer = MakeGarbageCollected<XREquirectLayer>(
