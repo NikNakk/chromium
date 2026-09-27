@@ -1247,7 +1247,6 @@ void XRSystem::ApplyImmersiveMediaLayerResize() {
     return;
   }
 
-  XREquirectLayer* old_layer = immersive_media_layer_.Get();
   XREquirectLayer* new_layer = CreateImmersiveMediaLayer(
       immersive_media_session_.Get(), immersive_media_video_.Get(),
       immersive_media_space_.Get());
@@ -1257,13 +1256,16 @@ void XRSystem::ApplyImmersiveMediaLayerResize() {
     return;
   }
 
+  // CreateImmersiveMediaLayer() has already queued creation of the new backend.
+  // This task runs after the frame that noticed the size change has finished,
+  // so the old layer can now be retired before the next internal frame.
+  if (immersive_media_layer_) {
+    immersive_media_layer_->DestroyBackend();
+  }
+
   immersive_media_video_size_ = decoded_size;
   immersive_media_layer_ = new_layer;
   immersive_media_session_->SetInternalCompositionLayer(new_layer);
-
-  if (old_layer) {
-    old_layer->DestroyBackend();
-  }
 
   DVLOG(1) << "Recreated XR media layer for decoded size "
            << decoded_size.ToString();

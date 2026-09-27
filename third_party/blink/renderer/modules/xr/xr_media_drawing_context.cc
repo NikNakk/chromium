@@ -52,7 +52,6 @@ XRMediaDrawingContext::XRMediaDrawingContext(
   if (video_) {
     source_video_size_ =
         gfx::Size(video_->videoWidth(), video_->videoHeight());
-    last_reported_video_size_ = source_video_size_;
 
     uint16_t width = video_->videoWidth();
     uint16_t height = video_->videoHeight();
@@ -84,9 +83,7 @@ void XRMediaDrawingContext::OnFrameStart() {
 
   const gfx::Size current_video_size(video_->videoWidth(), video_->videoHeight());
   if (!current_video_size.IsEmpty() &&
-      current_video_size != source_video_size_ &&
-      current_video_size != last_reported_video_size_) {
-    last_reported_video_size_ = current_video_size;
+      current_video_size != source_video_size_) {
     DVLOG(1) << "XR media decoded size changed from "
              << source_video_size_.ToString() << " to "
              << current_video_size.ToString();

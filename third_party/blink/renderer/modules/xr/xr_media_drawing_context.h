@@ -67,7 +67,6 @@ class XRMediaDrawingContext : public XRLayerDrawingContext {
   uint16_t height_ = 0;
   uint16_t max_texture_size_ = 2048;
   gfx::Size source_video_size_;
-  gfx::Size last_reported_video_size_;
   base::RepeatingCallback<void(gfx::Size)> size_changed_callback_;
   bool content_changed_ = false;
   bool needs_eac_reprojection_ = false;
