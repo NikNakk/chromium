@@ -93,4 +93,46 @@ TEST_F(BoxDefinitionsTest, SphericalVideoEquirectangularParsing) {
   EXPECT_EQ(sv3d.projection.type, VideoProjectionType::kEquirect360);
 }
 
+TEST_F(BoxDefinitionsTest, SphericalVideoMeshProjectionParsing) {
+  // Minimal sv3d -> proj -> mshp hierarchy. The mshp payload matches the
+  // Spherical Video V2 representation also carried by WebM ProjectionPrivate.
+  static constexpr auto kData = std::to_array<uint8_t>({
+      0x00, 0x00, 0x00, 0x44,  // sv3d size = 68
+      's', 'v', '3', 'd',
+
+      0x00, 0x00, 0x00, 0x3c,  // proj size = 60
+      'p', 'r', 'o', 'j',
+
+      0x00, 0x00, 0x00, 0x34,  // mshp size = 52
+      'm', 's', 'h', 'p',
+
+      // mshp FullBox payload.
+      0x00, 0x00, 0x00, 0x00,  // version/flags
+      0x00, 0x00, 0x00, 0x00,  // CRC
+      'r', 'a', 'w', ' ',
+      0x00, 0x00, 0x00, 0x20,  // mesh child size = 32
+      'm', 'e', 's', 'h',
+      0x00, 0x00, 0x00, 0x01,  // coordinate count
+      0x3f, 0x80, 0x00, 0x00,  // coordinate = 1.0f
+      0x00, 0x00, 0x00, 0x01,  // vertex count
+      0x00,                    // coordinate deltas
+      0x00, 0x00, 0x00, 0x01,  // vertex-list count
+      0x00,                    // texture id
+      0x00,                    // triangles
+      0x00, 0x00, 0x00, 0x03,  // index count
+      0x00,                    // index deltas
+  });
+
+  std::unique_ptr<BoxReader> reader(
+      BoxReader::ReadConcatentatedBoxes(kData, &media_log_));
+  ASSERT_TRUE(reader->ScanChildren());
+
+  SphericalVideo sv3d;
+  ASSERT_TRUE(reader->ReadChild(&sv3d));
+  EXPECT_EQ(sv3d.projection.type, VideoProjectionType::kMesh);
+
+  std::vector<uint8_t> expected_payload(kData.begin() + 24, kData.end());
+  EXPECT_EQ(sv3d.projection.projection_data, expected_payload);
+}
+
 }  // namespace media::mp4
