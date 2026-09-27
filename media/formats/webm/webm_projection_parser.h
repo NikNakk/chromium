@@ -31,6 +31,7 @@ class MEDIA_EXPORT WebMProjectionParser : public WebMParserClient {
 
   VideoTransformation GetVideoTransformation() const;
   VideoProjectionType GetProjectionType() const;
+  const std::vector<uint8_t>& GetProjectionData() const;
 
  private:
   friend class WebMProjectionParserTest;
@@ -50,6 +51,7 @@ class MEDIA_EXPORT WebMProjectionParser : public WebMParserClient {
   // Derived fields, used to store calculated projection type and
   // transformation.
   VideoProjectionType video_projection_type_;
+  std::vector<uint8_t> video_projection_data_;
   VideoTransformation video_transformation_;
 };
 
