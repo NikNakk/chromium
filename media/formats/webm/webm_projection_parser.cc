@@ -11,6 +11,8 @@
 
 namespace {
 
+constexpr size_t kMaxProjectionPrivateBytes = 4 * 1024 * 1024;
+
 bool IsValidAngle(double val, double min, double max) {
   return (val >= min && val <= max);
 }
@@ -80,6 +82,11 @@ bool WebMProjectionParser::OnBinary(int id, base::span<const uint8_t> data) {
   if (!projection_private_.empty()) {
     MEDIA_LOG(ERROR, media_log_)
         << "Multiple values for id: 0x" << std::hex << id << " specified";
+    return false;
+  }
+  if (data.size() > kMaxProjectionPrivateBytes) {
+    MEDIA_LOG(ERROR, media_log_)
+        << "ProjectionPrivate exceeds supported size: " << data.size();
     return false;
   }
 
