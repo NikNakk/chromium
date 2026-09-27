@@ -29,7 +29,10 @@ enum class VideoStereoMode {
   kMono = 0,
   kSideBySideLeftFirst,
   kTopBottomLeftFirst,
-  kMaxValue = kTopBottomLeftFirst,
+  // The projection metadata supplies a separate mapping for each eye rather
+  // than describing a fixed packing layout in the video frame.
+  kStereoCustom,
+  kMaxValue = kStereoCustom,
 };
 
 // Represents the projection format of a video track.
