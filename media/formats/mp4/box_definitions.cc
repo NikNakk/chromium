@@ -2604,6 +2604,8 @@ bool Stereoscopic3DVideo::Parse(BoxReader* reader) {
     mode = VideoStereoMode::kTopBottomLeftFirst;
   } else if (raw_stereo_mode == 2 /* kLeftRight */) {
     mode = VideoStereoMode::kSideBySideLeftFirst;
+  } else if (raw_stereo_mode == 3 /* kStereoCustom */) {
+    mode = VideoStereoMode::kStereoCustom;
   }
   return true;
 }
