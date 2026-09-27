@@ -8,7 +8,7 @@
 #include <utility>
 
 #include "base/functional/bind.h"
-#include "base/numerics/safe_conversions.h"
+#include "base/numerics/safe_conversions.h"\n#include "base/trace_event/trace_event.h"
 #include "gpu/command_buffer/client/raster_interface.h"
 #include "media/renderers/paint_canvas_video_renderer.h"
 #include "third_party/blink/renderer/core/html/media/html_video_element.h"
@@ -136,6 +136,20 @@ void XRMediaDrawingContext::OnFrameStart() {
     return;
   }
 
+  const uint64_t media_frame_id =
+      media_video_frame->unique_id().GetUnsafeValue();
+  if (last_media_frame_id_ == media_frame_id) {
+    // The video compositor commonly exposes the same decoded frame over
+    // multiple XR ticks (e.g. a 30 fps video in a 120 Hz session). Keep
+    // submitting the layer so OpenXR receives a frame, but leave the already
+    // populated SharedImage alone rather than scheduling another full-size
+    // video copy.
+    TRACE_EVENT_INSTANT("xr", "XRMediaFrameReused", "frame_id",
+                        media_frame_id);
+    content_changed_ = true;
+    return;
+  }
+
   bool need_scaling =
       width_ != video_->videoWidth() || height_ != video_->videoHeight();
 
@@ -200,6 +214,8 @@ void XRMediaDrawingContext::OnFrameStart() {
         media_player->GetYUVSharedImageCache());
   }
 
+  last_media_frame_id_ = media_frame_id;
+  TRACE_EVENT_INSTANT("xr", "XRMediaFrameCopied", "frame_id", media_frame_id);
   content_changed_ = true;
 
   // Flush the commands to ensure the GPU executes the copy before OpenXR
