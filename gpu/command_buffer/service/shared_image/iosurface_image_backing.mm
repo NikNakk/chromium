@@ -18,7 +18,7 @@
 #include "base/functional/callback_helpers.h"
 #include "base/memory/scoped_policy.h"
 #include "base/notimplemented.h"
-#include "base/trace_event/memory_dump_manager.h"
+#include "base/trace_event/memory_dump_manager.h"\n#include "base/trace_event/trace_event.h"
 #include "components/viz/common/resources/shared_image_format_utils.h"
 #include "gpu/command_buffer/common/shared_image_info.h"
 #include "gpu/command_buffer/common/shared_image_trace_utils.h"
@@ -1940,6 +1940,8 @@ void IOSurfaceImageBacking::AddSharedEventForEndAccess(
     auto [external_it, _] = pending_external_write_events_.insert(
         {ScopedSharedEvent(shared_event, base::scoped_policy::RETAIN), 0});
     external_it->second = std::max(external_it->second, signal_value);
+    TRACE_EVENT_INSTANT("xr", "OpenXRMetalSharedEventCaptured",
+                        "signal_value", signal_value);
   }
 #endif
 }
