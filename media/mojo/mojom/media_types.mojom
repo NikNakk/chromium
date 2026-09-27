@@ -110,12 +110,14 @@ enum VideoProjectionType {
   kNone,
   kEquirect180,
   kEquirect360,
+  kMesh,
 };
 
 // See media/base/video_spatial_format.h for descriptions.
 struct VideoSpatialFormat {
   VideoProjectionType projection_type;
   VideoStereoMode stereo_mode;
+  array<uint8> projection_data;
 };
 
 // See media/base/waiting.h for descriptions.
