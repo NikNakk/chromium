@@ -20,6 +20,8 @@ const char* StereoModeToString(VideoStereoMode mode) {
       return "side-by-side-left-first";
     case VideoStereoMode::kTopBottomLeftFirst:
       return "top-bottom-left-first";
+    case VideoStereoMode::kStereoCustom:
+      return "stereo-custom";
   }
   NOTREACHED();
 }
