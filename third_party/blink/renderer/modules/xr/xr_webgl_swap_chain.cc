@@ -304,7 +304,7 @@ WebGLUnownedTexture* XRWebGLSharedImageSwapChain::ProduceTexture() {
   const gfx::Size shared_size = content_image_data.shared_image->size();
   const gfx::Size descriptor_size(descriptor().width, descriptor().height);
   if (shared_size != descriptor_size) {
-    LOG(ERROR) << "WebXR SharedImage size mismatch: layer="
+    DLOG(ERROR) << "WebXR SharedImage size mismatch: layer="
                << layer()->layer_id() << " descriptor="
                << descriptor_size.ToString() << " shared_image="
                << shared_size.ToString() << " texture_array="
