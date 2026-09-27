@@ -552,7 +552,7 @@ void OpenXrGraphicsBinding::PopulateSharedImageData(
         layer_it->second->read_only_data().texture_width,
         layer_it->second->read_only_data().texture_height);
     if (swapchain_info->shared_image->size() != expected_size) {
-      LOG(ERROR) << "macOS WebXR composition SharedImage size mismatch: layer="
+      DLOG(ERROR) << "macOS WebXR composition SharedImage size mismatch: layer="
                  << layer_id << " expected=" << expected_size.ToString()
                  << " shared_image="
                  << swapchain_info->shared_image->size().ToString()
@@ -746,7 +746,7 @@ void OpenXrGraphicsBinding::SetEnabledCompositionLayers(
                  << layer->GetSwapchainImageSize().ToString()
                  << " has_swapchain=" << layer->HasColorSwapchain();
         if (layer->GetSwapchainImageSize() != layer_size) {
-          LOG(WARNING) << __func__ << ": correcting macOS projection layer "
+          DVLOG(1) << __func__ << ": correcting macOS projection layer "
                        << id << " swapchain size from "
                        << layer->GetSwapchainImageSize().ToString() << " to "
                        << layer_size.ToString();
