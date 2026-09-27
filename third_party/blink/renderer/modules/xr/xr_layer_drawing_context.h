@@ -5,6 +5,7 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_MODULES_XR_XR_LAYER_DRAWING_CONTEXT_H_
 #define THIRD_PARTY_BLINK_RENDERER_MODULES_XR_XR_LAYER_DRAWING_CONTEXT_H_
 
+#include "base/containers/span.h"
 #include "third_party/blink/renderer/modules/xr/xr_composition_layer.h"
 #include "third_party/blink/renderer/modules/xr/xr_layer_client.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
@@ -29,6 +30,7 @@ class XRLayerDrawingContext : public GarbageCollected<XRLayerDrawingContext>,
   virtual bool IsMediaLayer() const { return false; }
   virtual bool NeedsRasterAccess() const { return false; }
   virtual bool NeedsEacReprojection() const { return false; }
+  virtual base::span<const uint8_t> MediaProjectionData() const { return {}; }
 
   virtual void Trace(Visitor* visitor) const {}
 };
