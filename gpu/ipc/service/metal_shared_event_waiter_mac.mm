@@ -11,11 +11,9 @@
 #include <cstddef>
 #include <utility>
 
-#include "base/apple/scoped_nsobject.h"
 #include "base/check.h"
 #include "base/functional/bind.h"
 #include "base/logging.h"
-#include "base/memory/no_destructor.h"
 #include "base/memory/ref_counted.h"
 #include "base/synchronization/lock.h"
 #include "base/task/sequenced_task_runner.h"
@@ -27,21 +25,17 @@ namespace {
 
 constexpr base::TimeDelta kMetalSharedEventTimeout = base::Milliseconds(250);
 
-struct MetalSharedEventListenerStorage {
-  MetalSharedEventListenerStorage() {
-    queue = dispatch_queue_create(
-        "org.chromium.webxr.metal-shared-event", DISPATCH_QUEUE_SERIAL);
-    listener.reset(
-        [[MTLSharedEventListener alloc] initWithDispatchQueue:queue]);
-  }
-
-  dispatch_queue_t queue = nullptr;
-  base::apple::scoped_nsobject<MTLSharedEventListener> listener;
-};
+dispatch_queue_t GetMetalSharedEventQueue() {
+  static dispatch_queue_t queue = dispatch_queue_create(
+      "org.chromium.webxr.metal-shared-event", DISPATCH_QUEUE_SERIAL);
+  return queue;
+}
 
 MTLSharedEventListener* GetMetalSharedEventListener() {
-  static base::NoDestructor<MetalSharedEventListenerStorage> storage;
-  return storage->listener.get();
+  static MTLSharedEventListener* listener =
+      [[MTLSharedEventListener alloc]
+          initWithDispatchQueue:GetMetalSharedEventQueue()];
+  return listener;
 }
 
 class MetalSharedEventWaitState
