@@ -359,10 +359,17 @@ class GPU_GLES2_EXPORT IOSurfaceImageBacking
   };
   using SharedEventMap =
       base::flat_map<ScopedSharedEvent, uint64_t, SharedEventCompare>;
-  // Shared events and signals for exclusive accesses.
+  // Shared events and signals used by normal SharedImage access tracking.
   SharedEventMap exclusive_shared_events_ GUARDED_BY(lock_);
-  // Shared events and signals for non-exclusive accesses.
   SharedEventMap non_exclusive_shared_events_ GUARDED_BY(lock_);
+
+#if BUILDFLAG(IS_MAC)
+  // The normal exclusive event map is deliberately cleared when a subsequent
+  // write access begins. OpenXR asks for completion later, after its SyncToken
+  // has become runnable, so retain the most recent write completion separately
+  // until that external completion request consumes it.
+  SharedEventMap pending_external_write_events_ GUARDED_BY(lock_);
+#endif
 
   base::WeakPtrFactory<IOSurfaceImageBacking> weak_factory_;
 };

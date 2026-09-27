@@ -19,6 +19,7 @@
 #include "base/memory/scoped_policy.h"
 #include "base/notimplemented.h"
 #include "base/trace_event/memory_dump_manager.h"
+#include "base/trace_event/trace_event.h"
 #include "components/viz/common/resources/shared_image_format_utils.h"
 #include "gpu/command_buffer/common/shared_image_info.h"
 #include "gpu/command_buffer/common/shared_image_trace_utils.h"
@@ -1236,10 +1237,16 @@ IOSurfaceImageBacking::GetExclusiveSharedEventFences() {
   AutoLock auto_lock(this);
 
   std::vector<gfx::MTLSharedEventFence> fences;
-  fences.reserve(exclusive_shared_events_.size());
-  for (const auto& [shared_event, signal_value] : exclusive_shared_events_) {
+  fences.reserve(pending_external_write_events_.size());
+  for (const auto& [shared_event, signal_value] :
+       pending_external_write_events_) {
     fences.emplace_back(shared_event.get(), signal_value);
   }
+
+  // The fence objects retain their MTLSharedEvents, so consuming the pending
+  // map here does not invalidate the asynchronous listener registered by the
+  // XR completion path.
+  pending_external_write_events_.clear();
   return fences;
 }
 #endif
@@ -1922,7 +1929,18 @@ void IOSurfaceImageBacking::AddSharedEventForEndAccess(
   auto [it, _] = shared_events.insert(
       {ScopedSharedEvent(shared_event, base::scoped_policy::RETAIN), 0});
   it->second = std::max(it->second, signal_value);
-}
+
+#if BUILDFLAG(IS_MAC)
+  if (!readonly) {
+    auto [external_it, inserted] = pending_external_write_events_.insert(
+        {ScopedSharedEvent(shared_event, base::scoped_policy::RETAIN), 0});
+    external_it->second = std::max(external_it->second, signal_value);
+    TRACE_EVENT_INSTANT("xr", "OpenXRMetalSharedEventCaptured",
+                        "signal_value", signal_value,
+                        "new_event", inserted);
+  }
+#endif
+
 
 void IOSurfaceImageBacking::ProcessSharedEventsForBeginAccess(
     bool readonly,
