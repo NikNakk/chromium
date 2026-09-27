@@ -125,8 +125,7 @@ void IsolatedXRRuntimeProvider::SetupPollingForDeviceChanges() {
   [[maybe_unused]] const base::CommandLine* command_line =
       base::CommandLine::ForCurrentProcess();
 
-  LOG(ERROR) << "XRDBG: IsolatedXRRuntimeProvider::"
-                "SetupPollingForDeviceChanges";
+  DVLOG(2) << __func__;
   // If none of the following runtimes are enabled, we'll get an error for
   // 'command_line' being unused, thus [[maybe_unused]].
 
@@ -134,7 +133,7 @@ void IsolatedXRRuntimeProvider::SetupPollingForDeviceChanges() {
   const bool openxr_enabled =
       IsEnabled(command_line, device::features::kOpenXR,
                 switches::kWebXrRuntimeOpenXr);
-  LOG(ERROR) << "XRDBG: OpenXR gate enabled=" << openxr_enabled
+  DVLOG(1) << "OpenXR gate enabled=" << openxr_enabled
              << " feature="
              << base::FeatureList::IsEnabled(device::features::kOpenXR)
              << " force_runtime='"
@@ -146,10 +145,10 @@ void IsolatedXRRuntimeProvider::SetupPollingForDeviceChanges() {
     openxr_platform_helper_ =
         std::make_unique<OpenXrDesktopPlatformHelper>();
     const bool initialized = openxr_platform_helper_->EnsureInitialized();
-    LOG(ERROR) << "XRDBG: OpenXR platform helper initialized=" << initialized;
+    DVLOG(1) << "OpenXR platform helper initialized=" << initialized;
     const bool api_available =
         initialized && openxr_platform_helper_->IsApiAvailable();
-    LOG(ERROR) << "XRDBG: OpenXR API available=" << api_available;
+    DVLOG(1) << "OpenXR API available=" << api_available;
     should_check_openxr_ = api_available;
     any_runtimes_available |= should_check_openxr_;
   }
@@ -164,7 +163,7 @@ void IsolatedXRRuntimeProvider::SetupPollingForDeviceChanges() {
 void IsolatedXRRuntimeProvider::RequestDevices(
     mojo::PendingRemote<device::mojom::IsolatedXRRuntimeProviderClient>
         client) {
-  LOG(ERROR) << "XRDBG: IsolatedXRRuntimeProvider::RequestDevices";
+  DVLOG(2) << __func__;
   // Start polling to detect devices being added/removed.
   client_.Bind(std::move(client));
   SetupPollingForDeviceChanges();
@@ -175,7 +174,7 @@ void IsolatedXRRuntimeProvider::RequestDevices(
 bool IsolatedXRRuntimeProvider::IsOpenXrHardwareAvailable() {
   const bool available =
       should_check_openxr_ && openxr_platform_helper_->IsHardwareAvailable();
-  LOG(ERROR) << "XRDBG: OpenXR hardware available=" << available;
+  DVLOG(2) << "OpenXR hardware available=" << available;
   return available;
 }
 
