@@ -20,6 +20,7 @@
 #include "base/trace_event/common/trace_event_common.h"
 #include "build/build_config.h"
 #include "components/viz/common/surfaces/frame_sink_id.h"
+#include "content/browser/media/media_web_contents_observer.h"
 #include "content/browser/permissions/permission_util.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/browser/xr/metrics/session_metrics_helper.h"
@@ -561,16 +562,22 @@ void VRServiceImpl::RequestSession(
     return;
   }
 
+  auto* web_contents = static_cast<WebContentsImpl*>(GetWebContents());
+  const std::optional<MediaPlayerId>& fullscreen_player =
+      web_contents->media_web_contents_observer()
+          ->GetFullscreenVideoMediaPlayerId();
   const bool browser_validated_ua_immersive_media =
-      options->is_ua_immersive_media && GetWebContents()->IsFullscreen() &&
-      GetWebContents()->HasActiveEffectivelyFullscreenVideo();
+      options->is_ua_immersive_media &&
+      web_contents->HasActiveEffectivelyFullscreenVideo() &&
+      fullscreen_player.has_value() &&
+      fullscreen_player->frame_routing_id == render_frame_host_->GetGlobalId();
 
   if (options->is_ua_immersive_media &&
       !browser_validated_ua_immersive_media) {
     DVLOG(1) << __func__
-             << ": renderer requested UA immersive media without a "
-                "browser-observed fullscreen video; treating as an ordinary "
-                "WebXR request";
+             << ": renderer requested UA immersive media without an active "
+                "effectively-fullscreen video owned by the requesting frame; "
+                "treating as an ordinary WebXR request";
   }
 
   const bool has_user_activation =
@@ -679,8 +686,9 @@ void VRServiceImpl::GetPermissionStatus(SessionRequestData request,
     // fullscreen video, so a compromised renderer cannot use the request bit
     // alone to bypass activation or the origin's VR permission. Keep
     // feature-level permissions intact for sensitive capabilities.
-    LOG(ERROR) << "XRDBG immersive-media: bypassing origin VR permission for "
-                  "UA-owned immersive media session";
+    DVLOG(1) << __func__
+             << ": bypassing origin VR permission for browser-validated "
+                "UA-owned immersive media session";
 
     const std::vector<blink::PermissionType> permissions_for_features =
         GetRequiredPermissionsForFeatures(request.required_features,
