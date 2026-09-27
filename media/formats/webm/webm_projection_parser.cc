@@ -161,6 +161,12 @@ bool WebMProjectionParser::OnListEnd(int id) {
       video_projection_type_ = VideoProjectionType::kEquirect360;
     }
   } else {
+    // TODO(crbug.com): Preserve Cubemap/Mesh ProjectionPrivate data in
+    // VideoSpatialFormat instead of collapsing it to kNone. In particular,
+    // Spherical Video V2 Mesh projection data contains the complete 3D->UV
+    // mapping needed to render YouTube-style EAC streams generically, without
+    // relying on page DOM heuristics. Do not expose kMesh as a supported
+    // projection until the downstream renderer can consume that mesh.
     video_projection_type_ = VideoProjectionType::kNone;
   }
 
