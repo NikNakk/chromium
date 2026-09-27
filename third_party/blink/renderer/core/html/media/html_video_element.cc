@@ -1199,37 +1199,8 @@ void HTMLVideoElement::SetIsEffectivelyFullscreen(
 #endif  // BUILDFLAG(IS_MAC)
 }
 
-void HTMLVideoElement::SetLegacyVrPresentationActive(bool active) {
-#if BUILDFLAG(IS_MAC)
-  if (legacy_vr_presentation_active_ == active) {
-    return;
-  }
-
-  legacy_vr_presentation_active_ = active;
-
-  if (!GetDocument().GetSettings() ||
-      !GetDocument().GetSettings()->GetImmersiveVideoPlaybackEnabled()) {
-    return;
-  }
-
-  if (active) {
-    // videojs-vr hides the HTMLVideoElement and presents a generated WebGL
-    // canvas. Keep the decoded video as the source and bypass that canvas.
-    // MaybeEnterImmersivePictureInPicture() also handles activation before the
-    // first decoded frame arrives.
-    MaybeEnterImmersivePictureInPicture();
-  } else {
-    PictureInPictureController::From(GetDocument())
-        .ExitPictureInPictureImmersive(*this);
-  }
-#else
-  static_cast<void>(active);
-#endif
-}
-
 void HTMLVideoElement::MaybeEnterImmersivePictureInPicture() {
-  if ((!is_effectively_fullscreen_ && !legacy_vr_presentation_active_) ||
-      !has_received_first_frame_) {
+  if (!is_effectively_fullscreen_ || !has_received_first_frame_) {
     return;
   }
   if (GetDocument().GetSettings() &&
