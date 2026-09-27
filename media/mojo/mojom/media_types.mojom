@@ -103,6 +103,7 @@ enum VideoStereoMode {
   kMono,
   kSideBySideLeftFirst,
   kTopBottomLeftFirst,
+  kStereoCustom,
 };
 
 // See media/base/video_spatial_format.h for descriptions.
