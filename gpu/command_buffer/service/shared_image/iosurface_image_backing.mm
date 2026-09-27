@@ -1930,9 +1930,13 @@ void IOSurfaceImageBacking::AddSharedEventForEndAccess(
   it->second = std::max(it->second, signal_value);
 
 #if BUILDFLAG(IS_MAC)
+  // SharedImageStub appends "_Pid:<pid>" to cross-process debug labels before
+  // the backing is created, so match the OpenXR label prefixes rather than the
+  // unsuffixed client-side strings.
+  const std::string& label = debug_label();
   if (!readonly &&
-      (debug_label() == "OpenXrMetalDirect" ||
-       debug_label() == "OpenXrMetalTransfer")) {
+      (label.rfind("OpenXrMetalDirect_Pid:", 0) == 0 ||
+       label.rfind("OpenXrMetalTransfer_Pid:", 0) == 0)) {
     auto [external_it, _] = pending_external_write_events_.insert(
         {ScopedSharedEvent(shared_event, base::scoped_policy::RETAIN), 0});
     external_it->second = std::max(external_it->second, signal_value);
