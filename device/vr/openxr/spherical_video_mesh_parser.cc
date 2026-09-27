@@ -4,6 +4,7 @@
 
 #include "device/vr/openxr/spherical_video_mesh_parser.h"
 
+#include <algorithm>
 #include <array>
 #include <bit>
 #include <cstddef>
