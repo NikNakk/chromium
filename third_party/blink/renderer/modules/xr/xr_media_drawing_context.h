@@ -12,6 +12,7 @@
 #include "third_party/blink/renderer/modules/xr/xr_layer_drawing_context.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/heap/member.h"
+#include "third_party/blink/renderer/platform/wtf/vector.h"
 #include "ui/gfx/geometry/size.h"
 
 namespace blink {
@@ -43,7 +44,7 @@ class XRMediaDrawingContext : public XRLayerDrawingContext {
     return needs_eac_reprojection_;
   }
   base::span<const uint8_t> MediaProjectionData() const override {
-    return media_projection_data_;
+    return base::span<const uint8_t>(media_projection_data_);
   }
 
   XRSession* session() const override { return session_.Get(); }
@@ -65,7 +66,7 @@ class XRMediaDrawingContext : public XRLayerDrawingContext {
   uint16_t max_texture_size_ = 2048;
   bool content_changed_ = false;
   bool needs_eac_reprojection_ = false;
-  std::vector<uint8_t> media_projection_data_;
+  Vector<uint8_t> media_projection_data_;
 };
 
 }  // namespace blink
