@@ -1221,8 +1221,7 @@ SharedImageFactory::GetMetalSharedEventFences(
       continue;
     }
 
-    SharedImageBacking* backing = shared_image->backing();
-    auto backing_fences = backing->GetExclusiveSharedEventFences();
+    auto backing_fences = shared_image->GetExclusiveSharedEventFences();
     fences.insert(fences.end(),
                   std::make_move_iterator(backing_fences.begin()),
                   std::make_move_iterator(backing_fences.end()));
