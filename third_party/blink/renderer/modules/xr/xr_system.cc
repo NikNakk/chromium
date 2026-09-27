@@ -174,6 +174,11 @@ ImmersiveMediaSpatialFormat GetImmersiveMediaSpatialFormat(
         media::VideoProjectionType::kEquirect180;
     result.spatial_format.stereo_mode =
         media::VideoStereoMode::kSideBySideLeftFirst;
+  } else if (projection == "180_TB") {
+    result.spatial_format.projection_type =
+        media::VideoProjectionType::kEquirect180;
+    result.spatial_format.stereo_mode =
+        media::VideoStereoMode::kTopBottomLeftFirst;
   } else if (projection == "EAC" || projection == "EAC_LR") {
     result.spatial_format.projection_type =
         media::VideoProjectionType::kEquirect360;
