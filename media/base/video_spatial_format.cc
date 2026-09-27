@@ -6,6 +6,7 @@
 
 #include "base/notreached.h"
 #include "base/strings/strcat.h"
+#include "base/strings/string_number_conversions.h"
 
 namespace media {
 
@@ -31,6 +32,8 @@ const char* ProjectionTypeToString(VideoProjectionType projection_type) {
       return "equirect180";
     case VideoProjectionType::kEquirect360:
       return "equirect360";
+    case VideoProjectionType::kMesh:
+      return "mesh";
   }
   NOTREACHED();
 }
@@ -40,7 +43,9 @@ const char* ProjectionTypeToString(VideoProjectionType projection_type) {
 std::string VideoSpatialFormat::ToString() const {
   return base::StrCat(
       {"projection_type: ", ProjectionTypeToString(projection_type),
-       ", stereo_mode: ", StereoModeToString(stereo_mode)});
+       ", stereo_mode: ", StereoModeToString(stereo_mode),
+       ", projection_data_bytes: ",
+       base::NumberToString(projection_data.size())});
 }
 
 }  // namespace media
