@@ -67,9 +67,21 @@ MetalLayerData& GetMetalLayerData(OpenXrCompositionLayer& layer) {
   return *data;
 }
 
+struct MeshRenderTransform {
+  float destination_x_scale = 1.0f;
+  float destination_x_offset = 0.0f;
+  float destination_y_scale = 1.0f;
+  float destination_y_offset = 0.0f;
+  float source_u_scale = 1.0f;
+  float source_u_offset = 0.0f;
+  float source_v_scale = 1.0f;
+  float source_v_offset = 0.0f;
+};
+
 bool AppendMeshTriangle(
     const SphericalVideoMesh& mesh,
     const std::array<uint32_t, 3>& indices,
+    const MeshRenderTransform& transform,
     std::vector<MeshRenderVertex>* output) {
   std::array<double, 3> destination_u;
   std::array<double, 3> destination_y;
@@ -85,6 +97,9 @@ bool AppendMeshTriangle(
     if (!(length > 0.0)) {
       return false;
     }
+    // Spherical Video V2 mesh coordinates use the same OpenGL-style
+    // right-handed convention as the equirectangular direction used by the
+    // existing media path: -Z forward, +X right, +Y up.
     const double longitude = std::atan2(vertex.x, -vertex.z);
     const double normalized_y =
         std::clamp(static_cast<double>(vertex.y) / length, -1.0, 1.0);
@@ -104,16 +119,32 @@ bool AppendMeshTriangle(
     }
   }
 
-  auto append_copy = [&](double u_offset) {
+  auto append_copy = [&](double longitude_offset) {
     if (output->size() > kMaxMeshRenderVertices - 3) {
       return false;
     }
     for (size_t i = 0; i < indices.size(); ++i) {
       const auto& vertex = mesh.vertices[indices[i]];
-      const double u = destination_u[i] + u_offset;
+      const double equirect_u = destination_u[i] + longitude_offset;
+      const float destination_x =
+          static_cast<float>(2.0 * equirect_u - 1.0) *
+              transform.destination_x_scale +
+          transform.destination_x_offset;
+      const float destination_y_value =
+          static_cast<float>(destination_y[i]) *
+              transform.destination_y_scale +
+          transform.destination_y_offset;
+
+      const float source_u =
+          vertex.u * transform.source_u_scale + transform.source_u_offset;
+      const float source_v_gl =
+          vertex.v * transform.source_v_scale + transform.source_v_offset;
+      // Spherical Video V2 UVs use an OpenGL-style lower-left origin. The
+      // IOSurface-backed Metal texture is sampled with a top-left origin.
+      const float source_v_metal = 1.0f - source_v_gl;
+
       output->push_back(
-          {static_cast<float>(2.0 * u - 1.0),
-           static_cast<float>(destination_y[i]), vertex.u, vertex.v});
+          {destination_x, destination_y_value, source_u, source_v_metal});
     }
     return true;
   };
@@ -129,25 +160,98 @@ bool AppendMeshTriangle(
   return true;
 }
 
-std::optional<std::vector<MeshRenderVertex>> BuildMeshRenderVertices(
-    const SphericalVideoMesh& mesh) {
+bool AppendMeshWithTransform(
+    const SphericalVideoMesh& mesh,
+    const MeshRenderTransform& transform,
+    std::vector<MeshRenderVertex>* output) {
   if (mesh.triangle_indices.size() % 3 != 0) {
-    return std::nullopt;
+    return false;
   }
 
-  std::vector<MeshRenderVertex> output;
-  output.reserve(std::min(kMaxMeshRenderVertices,
-                          mesh.triangle_indices.size() * 2));
   for (size_t i = 0; i < mesh.triangle_indices.size(); i += 3) {
     if (!AppendMeshTriangle(
             mesh,
             {mesh.triangle_indices[i], mesh.triangle_indices[i + 1],
              mesh.triangle_indices[i + 2]},
-            &output)) {
-      return std::nullopt;
+            transform, output)) {
+      return false;
     }
   }
-  return output;
+  return true;
+}
+
+std::optional<std::vector<MeshRenderVertex>> BuildMeshRenderVertices(
+    const std::vector<SphericalVideoMesh>& meshes,
+    device::mojom::XRLayerLayout layout) {
+  std::vector<MeshRenderVertex> output;
+
+  if (layout == device::mojom::XRLayerLayout::kMono) {
+    if (meshes.size() != 1 ||
+        !AppendMeshWithTransform(meshes.front(), {}, &output)) {
+      return std::nullopt;
+    }
+    return output;
+  }
+
+  if (layout == device::mojom::XRLayerLayout::kStereoLeftRight) {
+    MeshRenderTransform left;
+    left.destination_x_scale = 0.5f;
+    left.destination_x_offset = -0.5f;
+
+    MeshRenderTransform right = left;
+    right.destination_x_offset = 0.5f;
+
+    if (meshes.size() == 1) {
+      // RFC stereo left-right: the common mesh maps each eye after selecting
+      // the corresponding half of the packed video texture.
+      left.source_u_scale = 0.5f;
+      right.source_u_scale = 0.5f;
+      right.source_u_offset = 0.5f;
+      if (!AppendMeshWithTransform(meshes.front(), left, &output) ||
+          !AppendMeshWithTransform(meshes.front(), right, &output)) {
+        return std::nullopt;
+      }
+      return output;
+    }
+
+    if (meshes.size() == 2 &&
+        AppendMeshWithTransform(meshes[0], left, &output) &&
+        AppendMeshWithTransform(meshes[1], right, &output)) {
+      return output;
+    }
+    return std::nullopt;
+  }
+
+  if (layout == device::mojom::XRLayerLayout::kStereoTopBottom) {
+    MeshRenderTransform left;
+    left.destination_y_scale = 0.5f;
+    left.destination_y_offset = 0.5f;
+
+    MeshRenderTransform right = left;
+    right.destination_y_offset = -0.5f;
+
+    if (meshes.size() == 1) {
+      // RFC stereo top-bottom uses OpenGL UVs: the left eye occupies the upper
+      // half (v=.5..1), the right eye the lower half (v=0...5).
+      left.source_v_scale = 0.5f;
+      left.source_v_offset = 0.5f;
+      right.source_v_scale = 0.5f;
+      if (!AppendMeshWithTransform(meshes.front(), left, &output) ||
+          !AppendMeshWithTransform(meshes.front(), right, &output)) {
+        return std::nullopt;
+      }
+      return output;
+    }
+
+    if (meshes.size() == 2 &&
+        AppendMeshWithTransform(meshes[0], left, &output) &&
+        AppendMeshWithTransform(meshes[1], right, &output)) {
+      return output;
+    }
+    return std::nullopt;
+  }
+
+  return std::nullopt;
 }
 
 id<MTLTexture> CreateIOSurfaceMetalTexture(id<MTLDevice> device,
