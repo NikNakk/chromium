@@ -271,6 +271,9 @@ const int kWebMStereoModeRightLeft = 11;
 const int kWebMStereoModeAnaglyphGreenMag = 12;
 const int kWebMStereoModeBothEyesBlockLR = 13;
 const int kWebMStereoModeBothEyesBlockRL = 14;
+// Spherical Video V2 provisional stereo-custom mode: projection metadata
+// carries separate eye mappings (typically two mesh boxes).
+const int kWebMStereoModeStereoCustom = 15;
 
 // Values for ProjectionType are spec'd here:
 // https://www.matroska.org/technical/elements.html#ProjectionType
