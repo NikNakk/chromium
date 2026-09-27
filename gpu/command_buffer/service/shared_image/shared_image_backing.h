@@ -35,6 +35,10 @@
 #include "ui/gfx/gpu_memory_buffer_handle.h"
 #include "ui/gfx/native_pixmap.h"
 
+#if BUILDFLAG(IS_MAC)
+#include "ui/gfx/mac/mtl_shared_event_fence.h"
+#endif
+
 #if BUILDFLAG(IS_WIN)
 #include <d3d11.h>
 #include <wrl/client.h>
@@ -234,6 +238,16 @@ class GPU_GLES2_EXPORT SharedImageBacking {
       base::OnceCallback<void(bool)> callback);
 
   virtual void MarkForDestruction() {}
+
+#if BUILDFLAG(IS_MAC)
+  // Returns Metal shared-event fences that must be observed before an
+  // exclusive consumer can safely use this backing. Backings without Metal
+  // shared-event synchronization return an empty vector.
+  virtual std::vector<gfx::MTLSharedEventFence>
+  GetExclusiveSharedEventFences() {
+    return {};
+  }
+#endif
 
   // Called when secondary reference is added to the SharedImage. Used by
   // CompoundImageBacking to make sure it can create necessary backings after
