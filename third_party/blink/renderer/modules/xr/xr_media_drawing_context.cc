@@ -8,8 +8,10 @@
 #include <utility>
 
 #include "base/functional/bind.h"
-#include "base/numerics/safe_conversions.h"\n#include "base/trace_event/trace_event.h"
-#include "gpu/command_buffer/client/raster_interface.h"\n#include "media/base/video_frame.h"
+#include "base/numerics/safe_conversions.h"
+#include "base/trace_event/trace_event.h"
+#include "gpu/command_buffer/client/raster_interface.h"
+#include "media/base/video_frame.h"
 #include "media/renderers/paint_canvas_video_renderer.h"
 #include "third_party/blink/renderer/core/html/media/html_video_element.h"
 #include "third_party/blink/renderer/modules/xr/xr_composition_layer.h"
