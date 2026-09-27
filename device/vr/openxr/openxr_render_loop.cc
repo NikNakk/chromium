@@ -926,7 +926,14 @@ bool OpenXrRenderLoop::HasSessionEnded() {
 }
 
 bool OpenXrRenderLoop::SubmitCompositedFrame() {
-  return XR_SUCCEEDED(openxr_->EndFrame());
+  const int32_t frame_index =
+      pending_frame_ ? pending_frame_->render_info_->frame_id : -1;
+  const bool success = XR_SUCCEEDED(openxr_->EndFrame());
+#if BUILDFLAG(IS_MAC)
+  TRACE_EVENT_INSTANT("xr", "OpenXRSwapchainReleased",
+                      "frame_index", frame_index, "success", success);
+#endif
+  return success;
 }
 
 void OpenXrRenderLoop::SubmitFrame(int16_t frame_index,
@@ -978,14 +985,26 @@ void OpenXrRenderLoop::SubmitFrameDrawnIntoTexture(
                                                combined_sync_tokens);
 
 #if BUILDFLAG(IS_MAC)
-  // The Metal OpenXR binding shares the runtime texture directly with ANGLE.
-  // Wait asynchronously for the renderer's SharedImage writes to complete
-  // before releasing/submitting the OpenXR image. Monado's existing
-  // compositor/reuse synchronization takes over after xrReleaseSwapchainImage.
-  context_provider_->SharedImageInterface()->SignalSyncToken(
-      std::move(combined_sync_tokens),
-      base::BindOnce(&OpenXrRenderLoop::OnWebXrSyncTokensSignaled,
-                     weak_ptr_factory_.GetWeakPtr(), frame_index, layer_ids));
+  // A SyncToken only proves that the GPU process has processed/submitted the
+  // renderer commands. With an IOSurface shared across processes/queues the
+  // runtime must not see the image until ANGLE's Metal commands have actually
+  // finished writing it. IOSurfaceImageBacking records an MTLSharedEvent when
+  // write access ends; wait for that event asynchronously after the SyncToken.
+  std::vector<gpu::Mailbox> shared_image_mailboxes;
+  shared_image_mailboxes.reserve(shared_images.size());
+  for (const auto& shared_image : shared_images) {
+    if (shared_image) {
+      shared_image_mailboxes.push_back(shared_image->mailbox());
+    }
+  }
+
+  context_provider_->SharedImageInterface()
+      ->SignalSyncTokenAndWaitForMetalSharedEvents(
+          std::move(combined_sync_tokens), std::move(shared_image_mailboxes),
+          frame_index,
+          base::BindOnce(&OpenXrRenderLoop::OnWebXrSyncTokensSignaled,
+                         weak_ptr_factory_.GetWeakPtr(), frame_index,
+                         layer_ids));
 #else
   gpu::gles2::GLES2Interface* gl = context_provider_->ContextGL();
 

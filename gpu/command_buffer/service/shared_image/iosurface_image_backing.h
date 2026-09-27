@@ -5,6 +5,8 @@
 #ifndef GPU_COMMAND_BUFFER_SERVICE_SHARED_IMAGE_IOSURFACE_IMAGE_BACKING_H_
 #define GPU_COMMAND_BUFFER_SERVICE_SHARED_IMAGE_IOSURFACE_IMAGE_BACKING_H_
 
+#include <vector>
+
 #include "base/apple/scoped_nsobject.h"
 #include "base/containers/flat_map.h"
 #include "base/memory/raw_ptr.h"

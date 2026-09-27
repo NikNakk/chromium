@@ -7,6 +7,7 @@
 #include <inttypes.h>
 
 #include <array>
+#include <iterator>
 #include <memory>
 #include <vector>
 
