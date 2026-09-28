@@ -742,7 +742,9 @@ mojom::XRFrameDataPtr OpenXrRenderLoop::GetNextFrameData() {
 
   // Unless we are fully synchronized/visible we shouldn't report input state.
   if (visibility_state_ == mojom::XRVisibilityState::VISIBLE) {
+    // Syncing the input action sets also updates the internal eye-gaze action.
     frame_data->input_state = openxr_->GetInputState();
+    frame_data->foveation_data = openxr_->GetFoveationData();
   }
 
   frame_data->render_info->mojo_from_viewer = openxr_->GetViewerPose();
