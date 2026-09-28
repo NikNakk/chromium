@@ -6,6 +6,7 @@
 #define DEVICE_VR_OPENXR_OPENXR_EXTENSION_HELPER_H_
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -14,6 +15,7 @@
 #include "build/buildflag.h"
 #include "device/vr/openxr/openxr_anchor_manager.h"
 #include "device/vr/openxr/openxr_depth_sensor.h"
+#include "device/vr/openxr/openxr_foveation.h"
 #include "device/vr/openxr/openxr_hand_tracker.h"
 #include "device/vr/openxr/openxr_light_estimator.h"
 #include "device/vr/openxr/openxr_platform.h"
@@ -36,6 +38,7 @@ struct OpenXrExtensionMethods {
   ~OpenXrExtensionMethods();
   // General Methods
   OPENXR_DECLARE_FN(xrPollFutureEXT);
+  OPENXR_DECLARE_FN(xrGetFoveationProfileMNDX);
 
   // Hand Tracking
   OPENXR_DECLARE_FN(xrCreateHandTrackerEXT);
@@ -151,6 +154,11 @@ class OpenXrExtensionHelper {
   const OpenXrExtensionMethods& ExtensionMethods() const {
     return extension_methods_;
   }
+
+  std::optional<OpenXrFoveationPolicy> GetFoveationPolicy(
+      XrInstance instance,
+      XrSystemId system,
+      OpenXrFoveationLevel level) const;
 
   // Returns whether or not we can support a given feature. If a given feature
   // is determined to be supported solely by the core spec, we will simply
