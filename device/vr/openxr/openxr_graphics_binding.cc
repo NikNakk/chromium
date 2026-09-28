@@ -819,6 +819,7 @@ bool OpenXrGraphicsBinding::PrepareCompositionLayer(
   }
 #endif
 
+  bool created_swapchain = false;
   if (!layer->HasColorSwapchain()) {
     last_rendered_layer_projection_views_.erase(layer_id);
     uint32_t layer_sample_count = swapchain_sample_count;
@@ -836,16 +837,22 @@ bool OpenXrGraphicsBinding::PrepareCompositionLayer(
                  << layer_id << ", result=" << result;
       return false;
     }
+    created_swapchain = true;
+  }
+
+  // Preserve the existing cross-platform behaviour: newly created composition
+  // swapchains get their SharedImages immediately even on bindings where that
+  // transport is optional rather than mandatory.
+  if (created_swapchain ||
+      (RequiresSharedImages() && !layer->IsUsingSharedImages())) {
+    CreateSharedImages(*layer, sii);
   }
 
   if (RequiresSharedImages() && !layer->IsUsingSharedImages()) {
-    CreateSharedImages(*layer, sii);
-    if (!layer->IsUsingSharedImages()) {
-      LOG(ERROR) << __func__ << ": composition layer " << layer_id
-                 << " has no usable SharedImages after swapchain creation";
-      layer->DestroySwapchain(sii);
-      return false;
-    }
+    LOG(ERROR) << __func__ << ": composition layer " << layer_id
+               << " has no usable SharedImages after swapchain creation";
+    layer->DestroySwapchain(sii);
+    return false;
   }
 
   return true;
