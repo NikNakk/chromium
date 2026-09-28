@@ -1519,21 +1519,23 @@ mojom::XRFoveationDataPtr OpenXrApiWrapper::GetFoveationData() const {
     return no_foveation();
   }
 
-  gfx::Vector3dF direction(0.0f, 0.0f, -1.0f);
+  // TransformVector() is no longer part of gfx::Transform. Use homogeneous
+  // vector coordinates with w=0 so this remains a direction rather than a
+  // point if translation is ever introduced into the transform.
+  std::array<float, 4> direction = {0.0f, 0.0f, -1.0f, 0.0f};
   gfx::Transform gaze_rotation(gfx::Quaternion(
       gaze_pose->orientation.x, gaze_pose->orientation.y,
       gaze_pose->orientation.z, gaze_pose->orientation.w));
-  gaze_rotation.TransformVector(&direction);
+  gaze_rotation.TransformVector4(direction);
 
   const float horizontal_length =
-      std::sqrt(direction.x() * direction.x() +
-                direction.z() * direction.z());
-  if (horizontal_length <= 1e-6f || direction.z() >= -1e-6f) {
+      std::sqrt(direction[0] * direction[0] + direction[2] * direction[2]);
+  if (horizontal_length <= 1e-6f || direction[2] >= -1e-6f) {
     return no_foveation();
   }
 
-  const float tangent_x = direction.x() / -direction.z();
-  const float tangent_y = direction.y() / horizontal_length;
+  const float tangent_x = direction[0] / -direction[2];
+  const float tangent_y = direction[1] / horizontal_length;
 
   auto data = mojom::XRFoveationData::New();
   data->policy = mojom::XRFoveationPolicyData::New();
