@@ -12,6 +12,7 @@
 #include "base/memory/raw_ptr.h"
 #include "base/memory/scoped_refptr.h"
 #include "device/vr/openxr/openxr_composition_layer.h"
+#include "device/vr/openxr/openxr_foveation.h"
 #include "device/vr/openxr/openxr_layers.h"
 #include "device/vr/openxr/openxr_swapchain_info.h"
 #include "device/vr/public/mojom/isolated_xr_service.mojom.h"
@@ -145,6 +146,13 @@ class OpenXrGraphicsBinding {
   // Creates a graphics-API-specific foveation implementation behind the
   // generic Chromium-facing policy interface.
   virtual std::unique_ptr<OpenXrFoveationBackend> CreateFoveationBackend();
+
+  // Configure the packed base projection render target. The centres are
+  // normalized to the full target, not to individual eye subimages.
+  bool ConfigureBaseLayerFoveation(
+      const OpenXrFoveationPolicy& policy,
+      base::span<const gfx::PointF> target_centers);
+  void ClearBaseLayerFoveation();
 
   // Resizes the shared buffer for the given swapchain info if the transfer size
   // has changed.
@@ -343,6 +351,15 @@ class OpenXrGraphicsBinding {
   bool fb_composition_layer_ext_enabled_ = false;
   bool webxr_visible_ = true;
   bool overlay_visible_ = false;
+
+  std::unique_ptr<OpenXrFoveationBackend> foveation_backend_;
+  std::optional<OpenXrFoveationMapping> current_base_foveation_mapping_;
+  mutable std::map<XrViewConfigurationType, OpenXrFoveationMapping>
+      last_rendered_base_foveation_mappings_;
+  mutable std::map<
+      XrViewConfigurationType,
+      std::vector<XrCompositionLayerFoveationMapMNDX>>
+      submitted_base_foveation_maps_;
 
   // This will only be valid if `fb_composition_layer_ext_enabled_` is true.
   XrCompositionLayerImageLayoutFB y_flip_layer_layout_;
