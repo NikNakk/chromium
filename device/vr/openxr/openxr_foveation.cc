@@ -88,6 +88,32 @@ bool BuildOpenXrFoveationAxisRates(const OpenXrFoveationPolicy& policy,
   return true;
 }
 
+bool BuildOpenXrFoveationAxisRates(
+    const OpenXrFoveationPolicy& policy,
+    base::span<const float> normalized_centers,
+    base::span<float> out_rates) {
+  if (out_rates.empty() || normalized_centers.empty()) {
+    return false;
+  }
+
+  std::ranges::fill(out_rates, 0.0f);
+  const uint32_t count = static_cast<uint32_t>(out_rates.size());
+  for (float center : normalized_centers) {
+    const float clamped = std::clamp(center, 0.0f, 1.0f);
+    const uint32_t center_index =
+        std::min(static_cast<uint32_t>(clamped * count), count - 1);
+    for (uint32_t i = 0; i < count; ++i) {
+      const uint32_t delta =
+          i > center_index ? i - center_index : center_index - i;
+      out_rates[i] = std::max(
+          out_rates[i],
+          OpenXrFoveationRateForOffset(
+              policy, static_cast<float>(delta) / static_cast<float>(count)));
+    }
+  }
+  return true;
+}
+
 XrCompositionLayerFoveationMapMNDX MakeOpenXrFoveationCompositionMap(
     const OpenXrFoveationMapping& mapping) {
   XrCompositionLayerFoveationMapMNDX out{};
