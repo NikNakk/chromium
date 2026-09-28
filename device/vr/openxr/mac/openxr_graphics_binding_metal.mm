@@ -986,6 +986,17 @@ void OpenXrGraphicsBindingMetal::CreateSharedImages(
     return;
   }
 
+  if (layer.read_only_data().needs_raster_access) {
+    LOG(ERROR) << "XRDBG media SharedImages layer=" << layer.GetLayerId()
+               << " runtime=" << runtime_size.ToString()
+               << " transfer=" << transfer_size.ToString()
+               << " eac=" << layer.read_only_data().needs_eac_reprojection
+               << " projection_bytes="
+               << layer.read_only_data().media_projection_data.size()
+               << " layout="
+               << static_cast<int>(layer.read_only_data().layout);
+  }
+
   gpu::SharedImageUsageSet usage =
       gpu::SHARED_IMAGE_USAGE_DISPLAY_READ |
       gpu::SHARED_IMAGE_USAGE_GLES2_READ |
