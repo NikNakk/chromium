@@ -1219,17 +1219,6 @@ void XRSystem::RequestImmersiveMediaSession(
   for (auto feature : kDefaultImmersiveVrFeatures) {
     options->required_features.push_back(feature);
   }
-#if BUILDFLAG(IS_MAC)
-  if (base::FeatureList::IsEnabled(
-          features::kImmersiveVideoControlsViaOpenXr)) {
-    // Multiple explicit composition layers are gated by the WebXR LAYERS
-    // session feature in the OpenXR backend, even for our UA-owned session.
-    // Keep it optional so immersive video still starts on runtimes that cannot
-    // support the controls quad.
-    options->optional_features.push_back(
-        device::mojom::XRSessionFeature::LAYERS);
-  }
-#endif  // BUILDFLAG(IS_MAC)
   options->trace_id = base::trace_event::GetNextGlobalTraceId();
 
   DVLOG(1) << "Requesting internal immersive-vr session for "
@@ -1303,8 +1292,8 @@ bool XRSystem::HandleImmersiveMediaPrimaryAction() {
 
     immersive_media_controls_visible_ = true;
     immersive_media_controls_hovered_ = -1;
-    immersive_media_controls_layer_->setOpacity(1.0f);
     UpdateImmersiveMediaControlsState();
+    InstallImmersiveMediaLayers();
     DVLOG(1) << "Immersive-media controls shown";
     return true;
   }
@@ -1313,8 +1302,8 @@ bool XRSystem::HandleImmersiveMediaPrimaryAction() {
   if (control_index < 0) {
     immersive_media_controls_visible_ = false;
     immersive_media_controls_hovered_ = -1;
-    immersive_media_controls_layer_->setOpacity(0.0f);
     UpdateImmersiveMediaControlsState();
+    InstallImmersiveMediaLayers();
     DVLOG(1) << "Immersive-media controls hidden";
     return true;
   }
@@ -1437,12 +1426,6 @@ XRQuadLayer* XRSystem::CreateImmersiveMediaControlsLayer(
     return nullptr;
   }
 
-  if (!session->IsFeatureEnabled(device::mojom::XRSessionFeature::LAYERS)) {
-    DVLOG(1) << "Immersive-media controls disabled: XR layers feature was "
-                "not enabled for the UA session";
-    return nullptr;
-  }
-
   if (session->maxRenderLayers() < 2) {
     DVLOG(1) << "Immersive-media controls disabled: runtime max layers="
              << session->maxRenderLayers();
@@ -1466,7 +1449,6 @@ XRQuadLayer* XRSystem::CreateImmersiveMediaControlsLayer(
              << (active ? "yes" : "no");
   }));
   layer->setBlendTextureSourceAlpha(true);
-  layer->setOpacity(0.0f);
 
   immersive_media_controls_context_ = drawing_context;
   DVLOG(1) << "Immersive-media controls layer created texture="
@@ -1483,7 +1465,7 @@ void XRSystem::InstallImmersiveMediaLayers() {
 
   HeapVector<Member<XRLayer>> layers;
   layers.push_back(immersive_media_layer_);
-  if (immersive_media_controls_layer_) {
+  if (immersive_media_controls_layer_ && immersive_media_controls_visible_) {
     layers.push_back(immersive_media_controls_layer_);
   }
   immersive_media_session_->SetInternalCompositionLayers(std::move(layers));
@@ -1849,10 +1831,7 @@ void XRSystem::OnImmersiveMediaSessionReturned(
            << " texture=" << layer->textureWidth() << "x"
            << layer->textureHeight()
            << " controls=" << (immersive_media_controls_layer_ ? "yes" : "no")
-           << " layers_feature="
-           << (session->IsFeatureEnabled(device::mojom::XRSessionFeature::LAYERS)
-                   ? "yes"
-                   : "no");
+           << " max_render_layers=" << session->maxRenderLayers();
 
 #if BUILDFLAG(IS_MAC)
   if (base::FeatureList::IsEnabled(
