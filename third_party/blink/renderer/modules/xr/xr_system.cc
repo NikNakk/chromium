@@ -5,6 +5,7 @@
 #include "third_party/blink/renderer/modules/xr/xr_system.h"
 
 #include <algorithm>
+#include <cmath>
 #include <memory>
 #include <utility>
 
@@ -16,10 +17,14 @@
 #include "media/base/video_spatial_format.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_xr_equirect_layer_init.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_xr_layer_layout.h"
+#include "third_party/blink/renderer/bindings/modules/v8/v8_xr_quad_layer_init.h"
 #include "third_party/blink/renderer/core/html/media/html_video_element.h"
 #include "third_party/blink/renderer/modules/xr/xr_equirect_layer.h"
+#include "third_party/blink/renderer/modules/xr/xr_media_controls_drawing_context.h"
 #include "third_party/blink/renderer/modules/xr/xr_media_drawing_context.h"
+#include "third_party/blink/renderer/modules/xr/xr_quad_layer.h"
 #include "third_party/blink/renderer/modules/xr/xr_reference_space.h"
+#include "third_party/blink/renderer/modules/xr/xr_rigid_transform.h"
 #include "third_party/blink/renderer/platform/wtf/math_extras.h"
 #include "services/metrics/public/cpp/ukm_builders.h"
 #include "services/network/public/mojom/permissions_policy/permissions_policy_feature.mojom-blink.h"
@@ -59,12 +64,19 @@
 #include "third_party/blink/renderer/platform/wtf/functional.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_view.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
+#include "ui/gfx/geometry/point3_f.h"
+#include "ui/gfx/geometry/vector3d_f.h"
 
 namespace blink {
 
 namespace {
 
 constexpr uint64_t kInvalidTraceId = -1;
+
+constexpr float kImmersiveMediaControlsWidthMeters = 1.10f;
+constexpr float kImmersiveMediaControlsHeightMeters = 0.22f;
+constexpr float kImmersiveMediaControlsYOffsetMeters = -0.14f;
+constexpr float kImmersiveMediaControlsDistanceMeters = 1.20f;
 
 const char kNavigatorDetachedError[] =
     "The navigator.xr object is no longer associated with a document.";
@@ -1219,9 +1231,14 @@ void XRSystem::EndImmersiveMediaSession(HTMLVideoElement* video) {
 
   XRSession* session = immersive_media_session_.Get();
   immersive_media_layer_ = nullptr;
+  immersive_media_controls_layer_ = nullptr;
+  immersive_media_controls_context_ = nullptr;
   immersive_media_space_ = nullptr;
   immersive_media_session_ = nullptr;
   immersive_media_video_size_ = gfx::Size();
+  immersive_media_controls_hovered_ = -1;
+  immersive_media_controls_pose_valid_ = false;
+  immersive_media_controls_visible_ = false;
   immersive_media_resize_task_pending_ = false;
 
   DVLOG(1) << "Ending internal immersive-media session";
@@ -1237,6 +1254,53 @@ bool XRSystem::HandleImmersiveMediaEscape() {
   DVLOG(1) << "Escape ending windowed immersive-media session";
   EndImmersiveMediaSession(immersive_media_video_.Get());
   return true;
+}
+
+bool XRSystem::HandleImmersiveMediaPrimaryAction() {
+  if (!immersive_media_session_ || !immersive_media_video_ ||
+      !immersive_media_controls_layer_ ||
+      !immersive_media_controls_context_) {
+    return false;
+  }
+
+  if (!immersive_media_controls_visible_) {
+    if (!PositionImmersiveMediaControlsAtCurrentView()) {
+      return true;
+    }
+
+    immersive_media_controls_visible_ = true;
+    immersive_media_controls_hovered_ = -1;
+    immersive_media_controls_layer_->setOpacity(1.0f);
+    UpdateImmersiveMediaControlsState();
+    DVLOG(1) << "Immersive-media controls shown";
+    return true;
+  }
+
+  const int control_index = ImmersiveMediaControlAtGaze();
+  if (control_index < 0) {
+    immersive_media_controls_visible_ = false;
+    immersive_media_controls_hovered_ = -1;
+    immersive_media_controls_layer_->setOpacity(0.0f);
+    UpdateImmersiveMediaControlsState();
+    DVLOG(1) << "Immersive-media controls hidden";
+    return true;
+  }
+
+  ActivateImmersiveMediaControl(control_index);
+  return true;
+}
+
+void XRSystem::UpdateImmersiveMediaControlsGaze() {
+  if (!immersive_media_controls_visible_ ||
+      !immersive_media_controls_context_ || !immersive_media_video_) {
+    return;
+  }
+
+  const int hovered = ImmersiveMediaControlAtGaze();
+  if (hovered != immersive_media_controls_hovered_) {
+    immersive_media_controls_hovered_ = hovered;
+  }
+  UpdateImmersiveMediaControlsState();
 }
 
 bool XRSystem::ShouldKeepImmersiveMediaSessionOnFullscreenExit(
@@ -1306,6 +1370,189 @@ XREquirectLayer* XRSystem::CreateImmersiveMediaLayer(
       session, init, layout, /*binding=*/nullptr, drawing_context);
 }
 
+XRQuadLayer* XRSystem::CreateImmersiveMediaControlsLayer(
+    XRSession* session,
+    XRReferenceSpace* space) {
+  if (!session || !space || session->maxRenderLayers() < 2 ||
+      !base::FeatureList::IsEnabled(
+          features::kImmersiveVideoControlsViaOpenXr)) {
+    return nullptr;
+  }
+
+  auto* drawing_context =
+      MakeGarbageCollected<XRMediaControlsDrawingContext>(session);
+  auto* init = XRQuadLayerInit::Create();
+  init->setSpace(space);
+  init->setViewPixelWidth(drawing_context->TextureWidth());
+  init->setViewPixelHeight(drawing_context->TextureHeight());
+  init->setWidth(kImmersiveMediaControlsWidthMeters);
+  init->setHeight(kImmersiveMediaControlsHeightMeters);
+
+  auto* layer = MakeGarbageCollected<XRQuadLayer>(
+      session, init, V8XRLayerLayout::Enum::kMono, /*binding=*/nullptr,
+      drawing_context);
+  layer->setBlendTextureSourceAlpha(true);
+  layer->setOpacity(0.0f);
+
+  immersive_media_controls_context_ = drawing_context;
+  return layer;
+}
+
+void XRSystem::InstallImmersiveMediaLayers() {
+  if (!immersive_media_session_ || !immersive_media_layer_) {
+    return;
+  }
+
+  HeapVector<Member<XRLayer>> layers;
+  layers.push_back(immersive_media_layer_);
+  if (immersive_media_controls_layer_) {
+    layers.push_back(immersive_media_controls_layer_);
+  }
+  immersive_media_session_->SetInternalCompositionLayers(std::move(layers));
+}
+
+bool XRSystem::PositionImmersiveMediaControlsAtCurrentView() {
+  if (!immersive_media_session_ || !immersive_media_controls_layer_) {
+    return false;
+  }
+
+  const auto mojo_from_viewer = immersive_media_session_->GetMojoFrom(
+      device::mojom::blink::XRReferenceSpaceType::kViewer);
+  const auto mojo_from_local = immersive_media_session_->GetMojoFrom(
+      device::mojom::blink::XRReferenceSpaceType::kLocal);
+  if (!mojo_from_viewer || !mojo_from_local) {
+    return false;
+  }
+
+  gfx::Transform local_from_mojo;
+  if (!mojo_from_local->GetInverse(&local_from_mojo)) {
+    return false;
+  }
+
+  const gfx::Transform local_from_viewer =
+      local_from_mojo * *mojo_from_viewer;
+  gfx::Transform viewer_from_panel;
+  viewer_from_panel.Translate3d(0.0f, kImmersiveMediaControlsYOffsetMeters,
+                               -kImmersiveMediaControlsDistanceMeters);
+
+  immersive_media_controls_local_from_panel_ =
+      local_from_viewer * viewer_from_panel;
+  immersive_media_controls_pose_valid_ = true;
+  immersive_media_controls_layer_->setTransform(
+      MakeGarbageCollected<XRRigidTransform>(
+          immersive_media_controls_local_from_panel_));
+  return true;
+}
+
+int XRSystem::ImmersiveMediaControlAtGaze() const {
+  if (!immersive_media_session_ || !immersive_media_controls_visible_ ||
+      !immersive_media_controls_pose_valid_) {
+    return -1;
+  }
+
+  const auto mojo_from_viewer = immersive_media_session_->GetMojoFrom(
+      device::mojom::blink::XRReferenceSpaceType::kViewer);
+  const auto mojo_from_local = immersive_media_session_->GetMojoFrom(
+      device::mojom::blink::XRReferenceSpaceType::kLocal);
+  if (!mojo_from_viewer || !mojo_from_local) {
+    return -1;
+  }
+
+  gfx::Transform local_from_mojo;
+  gfx::Transform panel_from_local;
+  if (!mojo_from_local->GetInverse(&local_from_mojo) ||
+      !immersive_media_controls_local_from_panel_.GetInverse(
+          &panel_from_local)) {
+    return -1;
+  }
+
+  const gfx::Transform local_from_viewer =
+      local_from_mojo * *mojo_from_viewer;
+  const gfx::Transform panel_from_viewer =
+      panel_from_local * local_from_viewer;
+
+  const gfx::Point3F origin =
+      panel_from_viewer.MapPoint(gfx::Point3F(0.0f, 0.0f, 0.0f));
+  const gfx::Vector3dF direction =
+      panel_from_viewer.MapVector(gfx::Vector3dF(0.0f, 0.0f, -1.0f));
+  if (std::abs(direction.z()) < 1e-5f) {
+    return -1;
+  }
+
+  const float distance = -origin.z() / direction.z();
+  if (distance <= 0.0f) {
+    return -1;
+  }
+
+  const float x = origin.x() + direction.x() * distance;
+  const float y = origin.y() + direction.y() * distance;
+  const float half_width = kImmersiveMediaControlsWidthMeters * 0.5f;
+  const float half_height = kImmersiveMediaControlsHeightMeters * 0.5f;
+  if (x < -half_width || x > half_width ||
+      y < -half_height || y > half_height) {
+    return -1;
+  }
+
+  const float normalized_x = (x + half_width) /
+                             kImmersiveMediaControlsWidthMeters;
+  // Panel raster coordinates have +Y down while XR layer coordinates have +Y
+  // up, hence the inversion here.
+  const float normalized_y = (half_height - y) /
+                             kImmersiveMediaControlsHeightMeters;
+  return XRMediaControlsDrawingContext::HitTest(normalized_x, normalized_y);
+}
+
+void XRSystem::UpdateImmersiveMediaControlsState() {
+  if (!immersive_media_controls_context_ || !immersive_media_video_) {
+    return;
+  }
+  immersive_media_controls_context_->SetState(
+      immersive_media_video_->paused(), immersive_media_video_->muted(),
+      immersive_media_controls_hovered_);
+}
+
+void XRSystem::ActivateImmersiveMediaControl(int control_index) {
+  if (!immersive_media_video_) {
+    return;
+  }
+
+  switch (control_index) {
+    case 0: {
+      const double current_time = immersive_media_video_->currentTime();
+      if (std::isfinite(current_time)) {
+        immersive_media_video_->setCurrentTime(std::max(0.0, current_time - 10.0));
+      }
+      break;
+    }
+    case 1:
+      immersive_media_video_->TogglePlayState();
+      break;
+    case 2: {
+      const double current_time = immersive_media_video_->currentTime();
+      const double duration = immersive_media_video_->duration();
+      if (std::isfinite(current_time)) {
+        double target = current_time + 10.0;
+        if (std::isfinite(duration)) {
+          target = std::min(target, duration);
+        }
+        immersive_media_video_->setCurrentTime(target);
+      }
+      break;
+    }
+    case 3:
+      immersive_media_video_->setMuted(!immersive_media_video_->muted());
+      break;
+    case 4:
+      DVLOG(1) << "Immersive-media controls requested XR exit";
+      EndImmersiveMediaSession(immersive_media_video_.Get());
+      return;
+    default:
+      return;
+  }
+
+  UpdateImmersiveMediaControlsState();
+}
+
 void XRSystem::ScheduleImmersiveMediaLayerResize(gfx::Size decoded_size) {
   const int64_t decoded_pixels =
       static_cast<int64_t>(decoded_size.width()) * decoded_size.height();
@@ -1362,7 +1609,7 @@ void XRSystem::ApplyImmersiveMediaLayerResize() {
 
   immersive_media_video_size_ = decoded_size;
   immersive_media_layer_ = new_layer;
-  immersive_media_session_->SetInternalCompositionLayer(new_layer);
+  InstallImmersiveMediaLayers();
 
   DVLOG(1) << "Recreated XR media layer for decoded size "
            << decoded_size.ToString();
@@ -1430,13 +1677,20 @@ void XRSystem::OnImmersiveMediaSessionReturned(
   immersive_media_video_size_ =
       gfx::Size(video->videoWidth(), video->videoHeight());
 
-  session->SetInternalCompositionLayer(layer);
+  immersive_media_controls_layer_ =
+      CreateImmersiveMediaControlsLayer(session, space);
+  immersive_media_controls_hovered_ = -1;
+  immersive_media_controls_pose_valid_ = false;
+  immersive_media_controls_visible_ = false;
+
+  InstallImmersiveMediaLayers();
   session->DispatchInitialEvents();
 
   DVLOG(1) << "Native XR media layer active decoded_size="
            << immersive_media_video_size_.ToString()
            << " texture=" << layer->textureWidth() << "x"
-           << layer->textureHeight();
+           << layer->textureHeight()
+           << " controls=" << (immersive_media_controls_layer_ ? "yes" : "no");
 
 #if BUILDFLAG(IS_MAC)
   if (base::FeatureList::IsEnabled(
@@ -1878,11 +2132,16 @@ void XRSystem::MakeXrCompatibleSync(
 void XRSystem::OnSessionEnded(XRSession* session) {
   if (session == immersive_media_session_) {
     immersive_media_layer_ = nullptr;
+    immersive_media_controls_layer_ = nullptr;
+    immersive_media_controls_context_ = nullptr;
     immersive_media_space_ = nullptr;
     immersive_media_session_ = nullptr;
     immersive_media_video_ = nullptr;
     immersive_media_video_size_ = gfx::Size();
     immersive_media_spatial_format_ = media::VideoSpatialFormat();
+    immersive_media_controls_hovered_ = -1;
+    immersive_media_controls_pose_valid_ = false;
+    immersive_media_controls_visible_ = false;
     immersive_media_needs_eac_reprojection_ = false;
     immersive_media_resize_task_pending_ = false;
     immersive_media_windowed_ = false;
@@ -2255,6 +2514,8 @@ void XRSystem::Trace(Visitor* visitor) const {
   visitor->Trace(immersive_media_session_);
   visitor->Trace(immersive_media_space_);
   visitor->Trace(immersive_media_layer_);
+  visitor->Trace(immersive_media_controls_layer_);
+  visitor->Trace(immersive_media_controls_context_);
   visitor->Trace(service_);
   visitor->Trace(environment_provider_);
   visitor->Trace(receiver_);
