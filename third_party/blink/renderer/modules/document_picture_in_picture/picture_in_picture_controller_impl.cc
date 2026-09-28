@@ -165,9 +165,25 @@ void PictureInPictureControllerImpl::ExitPictureInPictureImmersive(
     HTMLVideoElement& video_element) {
 #if BUILDFLAG(IS_MAC)
   if (XRSystem* xr = XRSystem::FromIfExists(video_element.GetDocument())) {
+    // Windowed immersive playback deliberately leaves DOM fullscreen after the
+    // browser has validated and established the UA-owned XR media session.
+    if (xr->ShouldKeepImmersiveMediaSessionOnFullscreenExit(&video_element)) {
+      return;
+    }
     xr->EndImmersiveMediaSession(&video_element);
   }
 #endif  // BUILDFLAG(IS_MAC)
+}
+
+bool PictureInPictureControllerImpl::HandleImmersivePictureInPictureEscape() {
+#if BUILDFLAG(IS_MAC)
+  if (Document* document = GetSupplementable()) {
+    if (XRSystem* xr = XRSystem::FromIfExists(*document)) {
+      return xr->HandleImmersiveMediaEscape();
+    }
+  }
+#endif  // BUILDFLAG(IS_MAC)
+  return false;
 }
 
 void PictureInPictureControllerImpl::EnterPictureInPictureInternal(
