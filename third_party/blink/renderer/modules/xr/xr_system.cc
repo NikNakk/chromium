@@ -1219,6 +1219,17 @@ void XRSystem::RequestImmersiveMediaSession(
   for (auto feature : kDefaultImmersiveVrFeatures) {
     options->required_features.push_back(feature);
   }
+#if BUILDFLAG(IS_MAC)
+  if (base::FeatureList::IsEnabled(
+          features::kImmersiveVideoControlsViaOpenXr)) {
+    // Multiple explicit composition layers are gated by the WebXR LAYERS
+    // session feature in the OpenXR backend, even for our UA-owned session.
+    // Keep it optional so immersive video still starts on runtimes that cannot
+    // support the controls quad.
+    options->optional_features.push_back(
+        device::mojom::XRSessionFeature::LAYERS);
+  }
+#endif  // BUILDFLAG(IS_MAC)
   options->trace_id = base::trace_event::GetNextGlobalTraceId();
 
   DVLOG(1) << "Requesting internal immersive-vr session for "
@@ -1423,6 +1434,12 @@ XRQuadLayer* XRSystem::CreateImmersiveMediaControlsLayer(
   if (!session || !space ||
       !base::FeatureList::IsEnabled(
           features::kImmersiveVideoControlsViaOpenXr)) {
+    return nullptr;
+  }
+
+  if (!session->IsFeatureEnabled(device::mojom::XRSessionFeature::LAYERS)) {
+    DVLOG(1) << "Immersive-media controls disabled: XR layers feature was "
+                "not enabled for the UA session";
     return nullptr;
   }
 
@@ -1827,7 +1844,11 @@ void XRSystem::OnImmersiveMediaSessionReturned(
            << immersive_media_video_size_.ToString()
            << " texture=" << layer->textureWidth() << "x"
            << layer->textureHeight()
-           << " controls=" << (immersive_media_controls_layer_ ? "yes" : "no");
+           << " controls=" << (immersive_media_controls_layer_ ? "yes" : "no")
+           << " layers_feature="
+           << (session->IsFeatureEnabled(device::mojom::XRSessionFeature::LAYERS)
+                   ? "yes"
+                   : "no");
 
 #if BUILDFLAG(IS_MAC)
   if (base::FeatureList::IsEnabled(
