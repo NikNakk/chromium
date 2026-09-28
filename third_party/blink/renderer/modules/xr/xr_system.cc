@@ -151,13 +151,27 @@ ImmersiveMediaSpatialFormat GetImmersiveMediaSpatialFormat(
   }
 
   // YouTube's spherical player can expose an EAC-packed decode while the media
-  // pipeline reports only generic equirect360 metadata. Do not let that generic
-  // metadata suppress the site-specific EAC signal. A non-empty projection
-  // mesh remains authoritative and is handled by the mesh reprojection path.
-  const bool youtube_spherical =
+  // pipeline reports only generic equirect360 metadata. The spherical-control
+  // element is transient during fullscreen/player transitions, so do not make
+  // EAC detection depend on it when the media pipeline already tells us that
+  // this is a YouTube mono 360 stream with no authoritative projection mesh.
+  // A non-empty projection mesh remains authoritative and is handled by the
+  // mesh reprojection path.
+  const StringView host = video->GetDocument().Url().Host();
+  const bool is_youtube =
+      host == "www.youtube.com" || host == "youtube.com" ||
+      host == "m.youtube.com";
+  const bool youtube_spherical_control =
       video->GetDocument().QuerySelector(
           AtomicString(".ytp-webgl-spherical-control")) != nullptr;
-  if (youtube_spherical && result.spatial_format.projection_data.empty() &&
+  const bool youtube_generic_360 =
+      is_youtube && result.spatial_format.projection_data.empty() &&
+      result.spatial_format.projection_type ==
+          media::VideoProjectionType::kEquirect360 &&
+      result.spatial_format.stereo_mode == media::VideoStereoMode::kMono;
+
+  if ((youtube_spherical_control || youtube_generic_360) &&
+      result.spatial_format.projection_data.empty() &&
       (result.spatial_format.projection_type ==
            media::VideoProjectionType::kNone ||
        (result.spatial_format.projection_type ==
@@ -170,7 +184,10 @@ ImmersiveMediaSpatialFormat GetImmersiveMediaSpatialFormat(
       result.spatial_format.stereo_mode = media::VideoStereoMode::kMono;
     }
     result.needs_eac_reprojection = true;
-    DVLOG(1) << "Using YouTube EAC reprojection for spherical 360 stream";
+    LOG(INFO) << "Immersive media: YouTube EAC reprojection selected "
+              << "host=" << host
+              << " spherical_control=" << youtube_spherical_control
+              << " format=" << result.spatial_format.ToString();
     return result;
   }
 
