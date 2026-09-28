@@ -1265,7 +1265,8 @@ bool XRSystem::HandleImmersiveMediaPrimaryAction() {
 
   if (!immersive_media_controls_visible_) {
     if (!PositionImmersiveMediaControlsAtCurrentView()) {
-      return true;
+      DVLOG(1) << "Immersive-media controls: viewer pose not ready";
+      return false;
     }
 
     immersive_media_controls_visible_ = true;
