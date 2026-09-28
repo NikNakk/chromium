@@ -78,6 +78,9 @@ class CORE_EXPORT KeyboardEventManager final
   WeakMember<ScrollableArea> scrollend_event_target_;
 
   bool is_handling_key_event_ = false;
+  // Tracks an Escape key sequence consumed by browser-owned immersive video so
+  // duplicate keydown/raw-keydown and the matching keyup stay out of page JS.
+  bool immersive_media_escape_key_active_ = false;
   // If a ScrollManager::BubblingScroll or ScrollManager::LogicalScroll is
   // started by a keydown event, this records the keycode for that event so
   // that we can fire a "scrollend" event if necessary on the accompanying keyup
