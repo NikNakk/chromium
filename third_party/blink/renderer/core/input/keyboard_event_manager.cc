@@ -248,6 +248,7 @@ WebInputEventResult KeyboardEventManager::KeyEvent(
   if (!node)
     return WebInputEventResult::kNotHandled;
 
+#if BUILDFLAG(IS_MAC)
   // Windowed browser-owned immersive video uses Escape as a UA control. Handle
   // it before DOM dispatch so page JavaScript cannot swallow the exit gesture.
   // Suppress the rest of the same physical Escape key sequence as well.
@@ -267,6 +268,7 @@ WebInputEventResult KeyboardEventManager::KeyEvent(
       return WebInputEventResult::kHandledSuppressed;
     }
   }
+#endif  // BUILDFLAG(IS_MAC)
 
   // To be meaningful enough to indicate user intention, a keyboard event needs
   // - not to be a modifier event
