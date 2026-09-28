@@ -320,10 +320,6 @@ def apply_patch(check_only: bool) -> None:
     header = header_path.read_text()
     impl = impl_path.read_text()
 
-    already_applied = MARKER in impl and "mXrFoveationRateMap" in header
-    if already_applied:
-        return
-
     revision = _angle_revision(angle_root)
     if revision is not None and revision != EXPECTED_ANGLE_REVISION:
         raise RuntimeError(
@@ -331,13 +327,42 @@ def apply_patch(check_only: bool) -> None:
             f"{EXPECTED_ANGLE_REVISION}, found {revision}. Rebase the XR Metal foveation bridge."
         )
 
-    new_header = _replace_once(header, HEADER_OLD, HEADER_NEW, "mtl_command_buffer.h")
-    new_impl = _replace_once(impl, INCLUDES_OLD, INCLUDES_NEW, "C++ includes")
-    new_impl = _replace_once(
-        new_impl, ANGLE_INCLUDES_OLD, ANGLE_INCLUDES_NEW, "IOSurface include"
-    )
-    new_impl = _replace_once(new_impl, NAMESPACE_OLD, NAMESPACE_NEW, "Metal helpers")
-    new_impl = _replace_once(new_impl, RESTART_OLD, RESTART_NEW, "render-pass hook")
+    # Apply each piece independently. This keeps the hook idempotent even when
+    # the ANGLE checkout already contains one of the required includes or a
+    # previous local experiment applied only part of the bridge.
+    new_header = header
+    if "mXrFoveationRateMap" not in new_header:
+        new_header = _replace_once(
+            new_header, HEADER_OLD, HEADER_NEW, "mtl_command_buffer.h"
+        )
+
+    new_impl = impl
+    if "#include <cmath>" not in new_impl or "#include <vector>" not in new_impl:
+        new_impl = _replace_once(new_impl, INCLUDES_OLD, INCLUDES_NEW, "C++ includes")
+
+    if "#    import <IOSurface/IOSurface.h>" not in new_impl:
+        include_anchor = '#include "libANGLE/renderer/metal/mtl_utils.h"\n'
+        iosurface_block = (
+            "\n#if TARGET_OS_OSX\n"
+            "#    import <IOSurface/IOSurface.h>\n"
+            "#endif\n"
+        )
+        new_impl = _replace_once(
+            new_impl,
+            include_anchor,
+            include_anchor + iosurface_block,
+            "IOSurface include anchor",
+        )
+
+    if "BuildChromiumXrFoveationRateMap" not in new_impl:
+        new_impl = _replace_once(
+            new_impl, NAMESPACE_OLD, NAMESPACE_NEW, "Metal helpers"
+        )
+
+    if "mCachedRenderPassDescObjC.get().rasterizationRateMap = nil;" not in new_impl:
+        new_impl = _replace_once(
+            new_impl, RESTART_OLD, RESTART_NEW, "render-pass hook"
+        )
 
     if check_only:
         return
