@@ -132,25 +132,50 @@ ImmersiveMediaSpatialFormat GetImmersiveMediaSpatialFormat(
   }
 
   result.spatial_format = video->GetWebMediaPlayer()->GetSpatialFormat();
-  if (result.spatial_format.projection_type !=
-      media::VideoProjectionType::kNone) {
+
+  const AtomicString projection =
+      video->getAttribute(AtomicString("data-xr-projection"));
+
+  // An explicit EAC annotation is stronger than generic container projection
+  // metadata. This matters for streams whose container says only "360" while
+  // the decoded pixels are still YouTube-style EAC packing.
+  if (projection == "EAC" || projection == "EAC_LR") {
+    result.spatial_format.projection_type =
+        media::VideoProjectionType::kEquirect360;
+    result.spatial_format.stereo_mode =
+        projection == "EAC_LR"
+            ? media::VideoStereoMode::kSideBySideLeftFirst
+            : media::VideoStereoMode::kMono;
+    result.needs_eac_reprojection = true;
     return result;
   }
 
-  // Some YouTube 360 streams use Equi-Angular Cubemap (EAC) packing without
-  // exposing a projection that Chromium currently maps into VideoSpatialFormat.
-  // YouTube's own spherical control is a narrow site-provided signal that the
-  // raw decoded frame is spatial. Treat this fallback as EAC and reproject it
-  // on the GPU before submitting it as an OpenXR equirect layer.
-  //
-  // This is intentionally not inferred from dimensions: ordinary 16:9 video
-  // can have exactly the same decoded size as YouTube's spherical streams.
-  if (video->GetDocument().QuerySelector(
-          AtomicString(".ytp-webgl-spherical-control"))) {
-    result.spatial_format.projection_type =
-        media::VideoProjectionType::kEquirect360;
+  // YouTube's spherical player can expose an EAC-packed decode while the media
+  // pipeline reports only generic equirect360 metadata. Do not let that generic
+  // metadata suppress the site-specific EAC signal. A non-empty projection
+  // mesh remains authoritative and is handled by the mesh reprojection path.
+  const bool youtube_spherical =
+      video->GetDocument().QuerySelector(
+          AtomicString(".ytp-webgl-spherical-control")) != nullptr;
+  if (youtube_spherical && result.spatial_format.projection_data.empty() &&
+      (result.spatial_format.projection_type ==
+           media::VideoProjectionType::kNone ||
+       (result.spatial_format.projection_type ==
+            media::VideoProjectionType::kEquirect360 &&
+        result.spatial_format.stereo_mode == media::VideoStereoMode::kMono))) {
+    if (result.spatial_format.projection_type ==
+        media::VideoProjectionType::kNone) {
+      result.spatial_format.projection_type =
+          media::VideoProjectionType::kEquirect360;
+      result.spatial_format.stereo_mode = media::VideoStereoMode::kMono;
+    }
     result.needs_eac_reprojection = true;
-    DVLOG(1) << "Using YouTube EAC fallback for missing stream projection metadata";
+    DVLOG(1) << "Using YouTube EAC reprojection for spherical 360 stream";
+    return result;
+  }
+
+  if (result.spatial_format.projection_type !=
+      media::VideoProjectionType::kNone) {
     return result;
   }
 
@@ -161,8 +186,6 @@ ImmersiveMediaSpatialFormat GetImmersiveMediaSpatialFormat(
   //
   // Supported values mirror the spatial layouts already handled by the native
   // immersive media path.
-  const AtomicString projection =
-      video->getAttribute(AtomicString("data-xr-projection"));
   if (projection == "360") {
     result.spatial_format.projection_type =
         media::VideoProjectionType::kEquirect360;
