@@ -57,9 +57,43 @@ OpenXrGraphicsBinding::CreateFoveationBackend() {
   return nullptr;
 }
 
+bool OpenXrGraphicsBinding::ConfigureBaseLayerFoveation(
+    const OpenXrFoveationPolicy& policy,
+    base::span<const gfx::PointF> target_centers) {
+  if (!foveation_backend_ || target_centers.empty()) {
+    ClearBaseLayerFoveation();
+    return false;
+  }
+
+  OpenXrFoveationTargetConfig config;
+  config.logical_size = GetProjectionLayerSwapchainImageSize();
+  config.policy = policy;
+  config.centers.assign(target_centers.begin(), target_centers.end());
+
+  auto state = foveation_backend_->ConfigureTarget(0, config);
+  if (!state || !state->mapping) {
+    ClearBaseLayerFoveation();
+    return false;
+  }
+
+  current_base_foveation_mapping_ = std::move(state->mapping);
+  return true;
+}
+
+void OpenXrGraphicsBinding::ClearBaseLayerFoveation() {
+  current_base_foveation_mapping_.reset();
+  if (foveation_backend_) {
+    foveation_backend_->ResetTarget(0);
+  }
+}
+
 void OpenXrGraphicsBinding::OnSessionCreated(XrSpace local_space,
                                              bool is_webgpu) {
   webgpu_session_ = is_webgpu;
+  foveation_backend_ = CreateFoveationBackend();
+  if (foveation_backend_ && !foveation_backend_->IsSupported()) {
+    foveation_backend_.reset();
+  }
 
   // Not all values will be used for the base layer. The swapchain image size
   // will set by SetProjectionLayerSwapchainImageSize(). But to be safe, we
@@ -93,6 +127,13 @@ void OpenXrGraphicsBinding::OnSessionCreated(XrSpace local_space,
 void OpenXrGraphicsBinding::OnSessionDestroyed(gpu::SharedImageInterface* sii) {
   last_rendered_base_projection_views_.clear();
   last_rendered_layer_projection_views_.clear();
+  current_base_foveation_mapping_.reset();
+  last_rendered_base_foveation_mappings_.clear();
+  submitted_base_foveation_maps_.clear();
+  if (foveation_backend_) {
+    foveation_backend_->Reset();
+    foveation_backend_.reset();
+  }
   if (base_layer_) {
     base_layer_->DestroySwapchain(sii);
     base_layer_.reset();
@@ -126,7 +167,31 @@ OpenXrGraphicsBinding::GetBaseLayerProjectionViews(
   if (base_layer_->is_rendered()) {
     last_rendered_base_projection_views_[view_config.Type()] =
         projection_views;
-    return projection_views;
+    // Keep the foveation mapping paired with the swapchain image whose pixels
+  // were actually rendered. Sparse WebXR frames reuse the previous released
+  // image and therefore must reuse its mapping as well.
+  if (base_layer_->is_rendered()) {
+    if (current_base_foveation_mapping_) {
+      last_rendered_base_foveation_mappings_[view_config.Type()] =
+          *current_base_foveation_mapping_;
+    } else {
+      last_rendered_base_foveation_mappings_.erase(view_config.Type());
+    }
+  }
+
+  auto mapping_it =
+      last_rendered_base_foveation_mappings_.find(view_config.Type());
+  if (mapping_it != last_rendered_base_foveation_mappings_.end()) {
+    auto& xr_maps = submitted_base_foveation_maps_[view_config.Type()];
+    xr_maps.resize(projection_views.size());
+    for (size_t i = 0; i < projection_views.size(); ++i) {
+      xr_maps[i] = MakeOpenXrFoveationCompositionMap(mapping_it->second);
+      xr_maps[i].next = projection_views[i].next;
+      projection_views[i].next = &xr_maps[i];
+    }
+  }
+
+  return projection_views;
   }
 
   auto cached =
