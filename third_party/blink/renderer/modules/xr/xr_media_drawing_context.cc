@@ -140,6 +140,15 @@ void XRMediaDrawingContext::OnFrameStart() {
 
   const uint64_t media_frame_id =
       media_video_frame->unique_id().GetUnsafeValue();
+
+  // Projection metadata can change when an adaptive streaming player switches
+  // representations without changing decoded dimensions. Re-check the
+  // immersive layer state once per new decoded frame so EAC/mesh changes can
+  // trigger a transactional layer rebuild just like a resolution increase.
+  if (last_media_frame_id_ != media_frame_id && size_changed_callback_) {
+    size_changed_callback_.Run(current_video_size);
+  }
+
   if (last_media_frame_id_ == media_frame_id) {
     // Do not submit the currently acquired composition-layer SharedImage when
     // the decoder has not advanced. The OpenXR backend already supports sparse
