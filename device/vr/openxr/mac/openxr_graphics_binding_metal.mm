@@ -6,6 +6,8 @@
 
 #include "device/vr/openxr/mac/openxr_graphics_binding_metal.h"
 
+#include "device/vr/openxr/mac/openxr_foveation_backend_metal.h"
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -748,6 +750,15 @@ bool OpenXrGraphicsBindingMetal::SupportsLayers() const {
   // Projection, quad, cylinder and equirect layers all use 2D color
   // swapchains and can share the same transport as the base projection layer.
   return true;
+}
+
+std::unique_ptr<OpenXrFoveationBackend>
+OpenXrGraphicsBindingMetal::CreateFoveationBackend() {
+  if (impl_->device == nil) {
+    return nullptr;
+  }
+  return std::make_unique<OpenXrFoveationBackendMetal>(
+      (__bridge void*)impl_->device);
 }
 
 void OpenXrGraphicsBindingMetal::ResizeSharedBuffer(
