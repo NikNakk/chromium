@@ -1238,10 +1238,14 @@ void OpenXrRenderLoop::SetEnabledCompositionLayers(
     return;
   }
 
-  graphics_binding_->SetEnabledCompositionLayers(
-      layer_ids, openxr_->session(),
-      openxr_->GetRecommendedSwapchainSampleCount(),
-      context_provider_->SharedImageInterface());
+  if (!graphics_binding_->SetEnabledCompositionLayers(
+          layer_ids, openxr_->session(),
+          openxr_->GetRecommendedSwapchainSampleCount(),
+          context_provider_->SharedImageInterface())) {
+    LOG(ERROR) << __func__
+               << ": failed to activate OpenXR composition-layer swapchain";
+    ExitPresent(ExitXrPresentReason::kSharedImagesUnavailable);
+  }
 }
 
 void OpenXrRenderLoop::CreateAnchor(
