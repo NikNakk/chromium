@@ -101,6 +101,8 @@ blink_modules_sources("xr") {
     "xr_light_probe.h",
     "xr_media_binding.cc",
     "xr_media_binding.h",
+    "xr_media_controls_drawing_context.cc",
+    "xr_media_controls_drawing_context.h",
     "xr_media_drawing_context.cc",
     "xr_media_drawing_context.h",
     "xr_mesh.cc",
