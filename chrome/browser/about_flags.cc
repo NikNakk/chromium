@@ -6083,6 +6083,10 @@ const FeatureEntry kFeatureEntries[] = {
      flag_descriptions::kImmersiveVideoPlaybackViaOpenXrName,
      flag_descriptions::kImmersiveVideoPlaybackViaOpenXrDescription, kOsMac,
      FEATURE_VALUE_TYPE(blink::features::kImmersiveVideoPlaybackViaOpenXr)},
+    {"immersive-video-keep-browser-windowed",
+     flag_descriptions::kImmersiveVideoKeepBrowserWindowedName,
+     flag_descriptions::kImmersiveVideoKeepBrowserWindowedDescription, kOsMac,
+     FEATURE_VALUE_TYPE(blink::features::kImmersiveVideoKeepBrowserWindowed)},
 #endif  // BUILDFLAG(IS_MAC) && BUILDFLAG(ENABLE_OPENXR)
 #if BUILDFLAG(IS_ANDROID) && BUILDFLAG(ENABLE_OPENXR)
     {"enable-openxr-android", flag_descriptions::kOpenXRName,
