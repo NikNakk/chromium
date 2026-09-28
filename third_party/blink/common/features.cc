@@ -2324,6 +2324,11 @@ BASE_FEATURE(kImmersiveVideoPlaybackViaOpenXr,
 BASE_FEATURE(kImmersiveVideoKeepBrowserWindowed,
              base::FEATURE_DISABLED_BY_DEFAULT);
 
+// Browser-owned transport controls presented as an OpenXR quad layer over
+// immersive spatial video.
+BASE_FEATURE(kImmersiveVideoControlsViaOpenXr,
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
 // Changes behavior of User-Agent Client Hints to send blank headers when the
 // User-Agent string is overridden, instead of disabling the headers altogether.
 BASE_FEATURE(kUACHOverrideBlank, base::FEATURE_DISABLED_BY_DEFAULT);
