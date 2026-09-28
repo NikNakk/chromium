@@ -2774,12 +2774,21 @@ device::mojom::blink::XRLayerManager* XRSession::LayerManager() {
 }
 
 void XRSession::SetInternalCompositionLayer(XRLayer* layer) {
-  if (ended_ || !immersive() || !layer) {
+  if (!layer) {
     return;
   }
 
   HeapVector<Member<XRLayer>> layers;
   layers.push_back(layer);
+  SetInternalCompositionLayers(std::move(layers));
+}
+
+void XRSession::SetInternalCompositionLayers(
+    HeapVector<Member<XRLayer>> layers) {
+  if (ended_ || !immersive() || layers.empty()) {
+    return;
+  }
+
   render_state_->SetLayersForInternal(std::move(layers));
   should_update_layers_backend_ = true;
 
