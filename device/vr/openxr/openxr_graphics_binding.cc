@@ -786,7 +786,7 @@ void OpenXrGraphicsBinding::DestroyCompositionLayer(
   layers_.erase(layer_it);
 }
 
-void OpenXrGraphicsBinding::SetEnabledCompositionLayers(
+bool OpenXrGraphicsBinding::SetEnabledCompositionLayers(
     const std::vector<LayerId>& layer_ids,
     XrSession session,
     uint32_t swapchain_sample_count,
@@ -838,10 +838,22 @@ void OpenXrGraphicsBinding::SetEnabledCompositionLayers(
           layer_sample_count = 1;
         }
 #endif
-        XrResult result =
+        const XrResult result =
             layer->CreateSwapchain(session, layer_sample_count);
-        CHECK_EQ(result, XR_SUCCESS);
+        if (XR_FAILED(result)) {
+          LOG(ERROR) << __func__
+                     << ": failed to create swapchain for composition layer "
+                     << id << ", result=" << result;
+          return false;
+        }
         CreateSharedImages(*layer, sii);
+        if (RequiresSharedImages() && !layer->IsUsingSharedImages()) {
+          LOG(ERROR) << __func__
+                     << ": composition layer " << id
+                     << " has no usable SharedImages after swapchain creation";
+          layer->DestroySwapchain(sii);
+          return false;
+        }
       }
       if (layer->type() == OpenXrCompositionLayer::Type::kProjection) {
         has_custom_projection_layer_ = true;
@@ -852,6 +864,7 @@ void OpenXrGraphicsBinding::SetEnabledCompositionLayers(
     }
   }
   layers_sequence_ = layer_ids;
+  return true;
 }
 
 }  // namespace device
