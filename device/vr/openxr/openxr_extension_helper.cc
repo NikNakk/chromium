@@ -126,6 +126,7 @@ OpenXrExtensionHelper::OpenXrExtensionHelper(
 
   // General methods
   OPENXR_LOAD_FN(xrPollFutureEXT);
+  OPENXR_LOAD_FN(xrGetFoveationProfileMNDX);
 
   // Hand tracking methods
   OPENXR_LOAD_FN(xrCreateHandTrackerEXT);
@@ -236,6 +237,17 @@ bool OpenXrExtensionHelper::IsFeatureSupported(
       // extension unless customized above.
       return true;
   }
+}
+
+std::optional<OpenXrFoveationPolicy>
+OpenXrExtensionHelper::GetFoveationPolicy(XrInstance instance,
+                                          XrSystemId system,
+                                          OpenXrFoveationLevel level) const {
+  if (!IsExtensionSupported(XR_MNDX_FOVEATION_EXTENSION_NAME)) {
+    return std::nullopt;
+  }
+  return QueryOpenXrFoveationPolicy(
+      instance, system, level, extension_methods_.xrGetFoveationProfileMNDX);
 }
 
 bool OpenXrExtensionHelper::IsExtensionSupported(
