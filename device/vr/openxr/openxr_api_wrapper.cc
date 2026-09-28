@@ -40,6 +40,7 @@
 #include "ui/gfx/geometry/quaternion.h"
 #include "ui/gfx/geometry/size.h"
 #include "ui/gfx/geometry/transform.h"
+#include "ui/gfx/geometry/vector3d_f.h"
 
 #if BUILDFLAG(IS_WIN)
 #include <dxgi1_2.h>
@@ -1502,15 +1503,20 @@ std::vector<mojom::XRInputSourceStatePtr> OpenXrApiWrapper::GetInputState() {
 }
 
 mojom::XRFoveationDataPtr OpenXrApiWrapper::GetFoveationData() const {
+  auto no_foveation = [this]() -> mojom::XRFoveationDataPtr {
+    graphics_binding_->ClearBaseLayerFoveation();
+    return nullptr;
+  };
+
   if (!foveation_policy_ || !input_helper_ || !HasFrameState() ||
       primary_view_config_.Views().empty()) {
-    return nullptr;
+    return no_foveation();
   }
 
   const std::optional<XrPosef> gaze_pose = input_helper_->GetEyeGazePose(
       view_space_, frame_state_.predictedDisplayTime);
   if (!gaze_pose) {
-    return nullptr;
+    return no_foveation();
   }
 
   gfx::Vector3dF direction(0.0f, 0.0f, -1.0f);
@@ -1523,7 +1529,7 @@ mojom::XRFoveationDataPtr OpenXrApiWrapper::GetFoveationData() const {
       std::sqrt(direction.x() * direction.x() +
                 direction.z() * direction.z());
   if (horizontal_length <= 1e-6f || direction.z() >= -1e-6f) {
-    return nullptr;
+    return no_foveation();
   }
 
   const float tangent_x = direction.x() / -direction.z();
@@ -1542,7 +1548,7 @@ mojom::XRFoveationDataPtr OpenXrApiWrapper::GetFoveationData() const {
   const gfx::Size target_size =
       graphics_binding_->GetProjectionLayerSwapchainImageSize();
   if (target_size.IsEmpty()) {
-    return nullptr;
+    return no_foveation();
   }
 
   float x_offset = static_cast<float>(primary_view_config_.Viewport().x());
@@ -1553,7 +1559,7 @@ mojom::XRFoveationDataPtr OpenXrApiWrapper::GetFoveationData() const {
     const float down = std::tan(view.fov.angleDown);
     const float up = std::tan(view.fov.angleUp);
     if (!(right > left) || !(up > down)) {
-      return nullptr;
+      return no_foveation();
     }
 
     const float center_x =
@@ -1578,7 +1584,7 @@ mojom::XRFoveationDataPtr OpenXrApiWrapper::GetFoveationData() const {
   // this policy, leave the frame unfoveated on both sides.
   if (!graphics_binding_->ConfigureBaseLayerFoveation(*foveation_policy_,
                                                        target_centers)) {
-    return nullptr;
+    return no_foveation();
   }
 
   return data;
