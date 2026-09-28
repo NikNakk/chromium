@@ -926,6 +926,8 @@ void VRServiceImpl::DoRequestSession(SessionRequestData request) {
                                             request.required_features.end());
   runtime_options->optional_features.assign(request.optional_features.begin(),
                                             request.optional_features.end());
+  runtime_options->is_ua_immersive_media =
+      request.browser_validated_ua_immersive_media;
 #if BUILDFLAG(IS_ANDROID)
   runtime_options->renderer_information =
       device::mojom::RendererInformation::New(
