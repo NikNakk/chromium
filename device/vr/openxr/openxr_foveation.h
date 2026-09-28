@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "base/containers/span.h"
+#include "base/memory/raw_ptr_exclusion.h"
 #include "device/vr/vr_export.h"
 #include "third_party/openxr/src/include/openxr/openxr.h"
 #include "ui/gfx/geometry/point_f.h"
@@ -42,7 +43,10 @@ typedef enum XrFoveationLevelMNDX {
 
 typedef struct XrFoveationProfileMNDX {
   XrStructureType type;
-  void* next;
+  // RAW_PTR_EXCLUSION: This is an OpenXR ABI pNext field. It must remain a
+  // native pointer so this locally defined extension struct is layout-compatible
+  // with the runtime's C ABI.
+  RAW_PTR_EXCLUSION void* next;
   XrFoveationLevelMNDX level;
   float centerRate;
   float middleRate;
@@ -53,7 +57,10 @@ typedef struct XrFoveationProfileMNDX {
 
 typedef struct XrCompositionLayerFoveationMapMNDX {
   XrStructureType type;
-  const void* next;
+  // RAW_PTR_EXCLUSION: This is an OpenXR ABI pNext field. It must remain a
+  // native pointer so this locally defined extension struct is layout-compatible
+  // with the runtime's C ABI.
+  RAW_PTR_EXCLUSION const void* next;
   uint32_t boundaryCount;
   float x[XR_MNDX_FOVEATION_MAP_BOUNDARY_COUNT];
   float y[XR_MNDX_FOVEATION_MAP_BOUNDARY_COUNT];
