@@ -6743,6 +6743,12 @@ inline constexpr char kImmersiveVideoKeepBrowserWindowedDescription[] =
     "After browser-owned immersive video starts, exits desktop fullscreen while "
     "keeping the OpenXR media session active. Escape exits immersive video.";
 
+inline constexpr char kImmersiveVideoControlsViaOpenXrName[] =
+    "Immersive video controls via OpenXR";
+inline constexpr char kImmersiveVideoControlsViaOpenXrDescription[] =
+    "Adds a browser-owned OpenXR transport panel for immersive video. Trigger "
+    "shows the panel, then activates the control currently targeted by gaze.";
+
 inline constexpr char kOpenXRAndroidSmoothDepthName[] =
     "Enable OpenXR Smooth Depth";
 inline constexpr char kOpenXRAndroidSmoothDepthDescription[] =
