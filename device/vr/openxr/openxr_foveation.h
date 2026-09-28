@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <vector>
 
 #include "base/containers/span.h"
 #include "device/vr/vr_export.h"
@@ -95,15 +96,18 @@ struct DEVICE_VR_EXPORT OpenXrFoveationMapping {
   std::array<float, kOpenXrFoveationMapBoundaryCount> y{};
 };
 
-// Per-view client input. center is normalized logical render-target space.
-struct DEVICE_VR_EXPORT OpenXrFoveationViewConfig {
+// Render-target input. A packed stereo target has two normalized centres;
+ // a per-eye or mono target has one. Keeping this at target level lets the
+ // policy remain independent of whether the graphics backend uses arrays,
+ // separate swapchains, or a side-by-side texture.
+struct DEVICE_VR_EXPORT OpenXrFoveationTargetConfig {
   gfx::Size logical_size;
-  gfx::PointF center{0.5f, 0.5f};
+  std::vector<gfx::PointF> centers;
   OpenXrFoveationPolicy policy;
 };
 
 // Backend result. Full-resolution shading-rate backends may omit mapping.
-struct DEVICE_VR_EXPORT OpenXrFoveationViewState {
+struct DEVICE_VR_EXPORT OpenXrFoveationTargetState {
   gfx::Size physical_size;
   std::optional<OpenXrFoveationMapping> mapping;
 };
@@ -114,10 +118,10 @@ class DEVICE_VR_EXPORT OpenXrFoveationBackend {
  public:
   virtual ~OpenXrFoveationBackend();
   virtual bool IsSupported() const = 0;
-  virtual std::optional<OpenXrFoveationViewState> ConfigureView(
-      uint32_t view_index,
-      const OpenXrFoveationViewConfig& config) = 0;
-  virtual void ResetView(uint32_t view_index) = 0;
+  virtual std::optional<OpenXrFoveationTargetState> ConfigureTarget(
+      uint32_t target_index,
+      const OpenXrFoveationTargetConfig& config) = 0;
+  virtual void ResetTarget(uint32_t target_index) = 0;
   virtual void Reset() = 0;
 };
 
@@ -134,6 +138,11 @@ DEVICE_VR_EXPORT float OpenXrFoveationRateForOffset(
 DEVICE_VR_EXPORT bool BuildOpenXrFoveationAxisRates(
     const OpenXrFoveationPolicy& policy,
     uint32_t center_index,
+    base::span<float> out_rates);
+
+DEVICE_VR_EXPORT bool BuildOpenXrFoveationAxisRates(
+    const OpenXrFoveationPolicy& policy,
+    base::span<const float> normalized_centers,
     base::span<float> out_rates);
 
 DEVICE_VR_EXPORT XrCompositionLayerFoveationMapMNDX
