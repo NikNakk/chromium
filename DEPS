@@ -4425,6 +4425,18 @@ hooks = [
     ],
   },
   {
+    # Apply the revision-pinned ANGLE/Metal bridge used by macOS OpenXR
+    # foveation. This belongs in dependency setup rather than GN generation:
+    # the script mutates the separate ANGLE DEPS checkout and is idempotent.
+    'name': 'mac_openxr_angle_foveation',
+    'pattern': '.',
+    'condition': 'host_os == "mac"',
+    'action': [
+        'python3',
+        'src/device/vr/openxr/mac/apply_angle_metal_foveation.py',
+    ],
+  },
+  {
     # This clobbers when necessary (based on get_landmines.py). This should
     # run as early as possible so that other things that get/generate into the
     # output directory will not subsequently be clobbered.
