@@ -55,6 +55,9 @@ class DEVICE_VR_EXPORT OpenXrGraphicsBindingMetal
   void CreateSharedImages(OpenXrCompositionLayer& layer,
                           gpu::SharedImageInterface* sii) override;
   bool ShouldFlipSubmittedImage(OpenXrCompositionLayer& layer) const override;
+  bool PublishBaseLayerFoveation(
+      const OpenXrFoveationTargetConfig& config) override;
+  void ClearPublishedBaseLayerFoveation() override;
   std::unique_ptr<OpenXrCompositionLayer::GraphicsBindingData>
   CreateLayerGraphicsBindingData() const override;
 
