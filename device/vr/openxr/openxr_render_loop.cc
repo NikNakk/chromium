@@ -1174,8 +1174,19 @@ void OpenXrRenderLoop::CreateCompositionLayer(
     return;
   }
 
-  if (!graphics_binding_->CreateCompositionLayer(
-          std::move(layer_data), context_provider_->SharedImageInterface())) {
+  const LayerId layer_id = layer_data->read_only_data->layer_id;
+  gpu::SharedImageInterface* sii = context_provider_->SharedImageInterface();
+  if (!graphics_binding_->CreateCompositionLayer(std::move(layer_data), sii)) {
+    return;
+  }
+
+  // Creation is only reported to Blink once the runtime swapchain and required
+  // SharedImages are actually ready. This lets callers keep an existing layer
+  // alive until its replacement is known to be drawable.
+  if (!graphics_binding_->PrepareCompositionLayer(
+          layer_id, openxr_->session(),
+          openxr_->GetRecommendedSwapchainSampleCount(), sii)) {
+    graphics_binding_->DestroyCompositionLayer(layer_id, sii);
     return;
   }
 
