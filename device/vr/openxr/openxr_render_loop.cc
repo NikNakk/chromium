@@ -1258,6 +1258,11 @@ void OpenXrRenderLoop::SetEnabledCompositionLayers(
       is_ua_immersive_media_session_;
   const size_t max_enabled_layers =
       allow_multiple_layers ? openxr_->GetMaxRenderLayers() : 1u;
+  DVLOG(1) << "SetEnabledCompositionLayers count=" << layer_ids.size()
+           << " max=" << max_enabled_layers
+           << " ua_immersive_media=" << is_ua_immersive_media_session_
+           << " webxr_layers="
+           << openxr_->IsFeatureEnabled(mojom::XRSessionFeature::LAYERS);
   if (layer_ids.size() > max_enabled_layers) {
     layer_manager_receiver_.ReportBadMessage(
         "Tried to enable too many layers.");
