@@ -110,17 +110,6 @@ if (enable_vr) {
   }
 
   if (enable_openxr) {
-    if (is_mac) {
-      # ANGLE is a separate DEPS checkout, so keep the experimental XR Metal
-      # foveation bridge as an explicit, idempotent patch applied at GN
-      # generation time. The script is revision-pinned and fails if ANGLE rolls
-      # underneath it.
-      _openxr_angle_foveation_patch =
-          exec_script("openxr/mac/apply_angle_metal_foveation.py", [],
-                      "trim string")
-      assert(_openxr_angle_foveation_patch == "ok")
-    }
-
     source_set("openxr_data") {
       deps = [
         "//base",
