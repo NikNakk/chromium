@@ -2614,9 +2614,11 @@ void XRSession::ProcessInputSourceEvents(
         input_sources_->GetWithSourceId(input_state->source_id);
     // The input source might not be in input_sources_ if it was created hidden.
     if (input_source) {
-      // UA-owned immersive media is not exposed to page script. Consume a
-      // completed primary select here to summon/activate the browser transport
-      // panel instead of dispatching a synthetic WebXR select event.
+      // Keep XRInputSource's pressed/clicked bookkeeping coherent even for the
+      // UA-owned session. The session object is never exposed to page script,
+      // so these normal WebXR events have no page recipient.
+      input_source->UpdateButtonStates(input_state);
+
       if (input_state->primary_input_clicked &&
           xr_->HandleImmersiveMediaPrimaryAction()) {
         if (ended_) {
@@ -2624,7 +2626,6 @@ void XRSession::ProcessInputSourceEvents(
         }
         continue;
       }
-      input_source->UpdateButtonStates(input_state);
     }
   }
 }
