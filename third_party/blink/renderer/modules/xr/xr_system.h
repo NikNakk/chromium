@@ -530,6 +530,10 @@ class XRSystem final : public EventTarget,
   // if it needs to wait for fullscreen mode to fully exit when ending
   // the session.
   Member<XrExitFullscreenObserver> fullscreen_exit_observer_;
+  // Dedicated observer for the one-time fullscreen -> windowed transition of
+  // a browser-owned immersive media session. Kept separate from the ordinary
+  // WebXR session-shutdown observer above.
+  Member<XrExitFullscreenObserver> immersive_media_fullscreen_exit_observer_;
 
   bool is_context_destroyed_ = false;
   bool did_service_ever_disconnect_ = false;
