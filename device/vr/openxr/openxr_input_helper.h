@@ -24,6 +24,7 @@ class OpenXRInputHelper {
  public:
   static XrResult CreateOpenXRInputHelper(
       XrInstance instance,
+      XrSystemId system,
       const std::string& system_name,
       const OpenXrExtensionHelper& extension_helper,
       XrSession session,
@@ -45,6 +46,11 @@ class OpenXRInputHelper {
   std::vector<mojom::XRInputSourceStatePtr> GetInputState(
       XrTime predicted_display_time);
 
+  // Eye gaze is runtime/internal input used for foveation and is not exposed as
+  // a WebXR input source. The returned pose is relative to |base_space|.
+  std::optional<XrPosef> GetEyeGazePose(XrSpace base_space,
+                                        XrTime predicted_display_time) const;
+
   XrResult OnInteractionProfileChanged();
 
   bool ReceivedExitGesture() { return received_exit_gesture_; }
@@ -63,6 +69,7 @@ class OpenXRInputHelper {
 
  private:
   XrResult Initialize(XrInstance instance,
+                      XrSystemId system,
                       const std::string& system_name,
                       const OpenXrExtensionHelper& extension_helper);
 
@@ -89,6 +96,13 @@ class OpenXRInputHelper {
       controller_states_;
 
   std::unique_ptr<OpenXRPathHelper> path_helper_;
+
+  bool eye_gaze_enabled_ = false;
+  XrActionSet eye_gaze_action_set_ = XR_NULL_HANDLE;
+  XrAction eye_gaze_action_ = XR_NULL_HANDLE;
+  XrSpace eye_gaze_space_ = XR_NULL_HANDLE;
+  XrPath eye_gaze_subaction_path_ = XR_NULL_PATH;
+
   bool received_exit_gesture_ = false;
   bool hand_input_enabled_ = false;
 };
