@@ -912,6 +912,26 @@ struct XRRenderInfo
 };
 
 // The data needed for each animation frame of an XRSession.
+// Graphics-API-independent foveation policy and per-view focal centres.
+struct XRFoveationPolicyData {
+  float center_rate;
+  float middle_rate;
+  float peripheral_rate;
+  float center_half_extent;
+  float middle_half_extent;
+};
+
+struct XRFoveationViewData {
+  // Normalized logical view coordinates: 0,0 top-left; 1,1 bottom-right.
+  float center_x;
+  float center_y;
+};
+
+struct XRFoveationData {
+  XRFoveationPolicyData policy;
+  array<XRFoveationViewData> views;
+};
+
 struct XRFrameData {
   // General XRSession value
 
@@ -925,6 +945,11 @@ struct XRFrameData {
   // across the process boundary.
   gpu.mojom.ExportedSharedImage? buffer_shared_image;
   gpu.mojom.SyncToken? buffer_sync_token;
+
+  // Present only when the runtime supplies a foveation policy and a valid eye
+  // gaze pose for this frame. The renderer may keep the previous policy/map
+  // across a transient missing sample, but must not invent a new gaze centre.
+  XRFoveationData? foveation_data;
 
   // The camera_image_buffer_shared_image is used to send a copy of the camera
   // image across the process boundary for immersive-ar sessions. This assumes
