@@ -1168,15 +1168,15 @@ void XRSystem::RequestImmersiveMediaSession(
     return;
   }
 
-  immersive_media_spatial_format_ = spatial_format;
-  immersive_media_needs_eac_reprojection_ =
-      immersive_format.needs_eac_reprojection;
-
   TryEnsureService();
   if (!service_.is_bound()) {
     DVLOG(1) << "Immersive-media VRService unavailable";
     return;
   }
+
+  immersive_media_spatial_format_ = spatial_format;
+  immersive_media_needs_eac_reprojection_ =
+      immersive_format.needs_eac_reprojection;
 
   DisableBackForwardCache();
   immersive_media_video_ = video;
