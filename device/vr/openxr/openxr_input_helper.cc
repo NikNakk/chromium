@@ -4,8 +4,9 @@
 
 #include "device/vr/openxr/openxr_input_helper.h"
 
-#include <cstdio>
-
+#include "base/check.h"
+#include "base/containers/span.h"
+#include "base/strings/string_util.h"
 #include "base/trace_event/trace_event.h"
 #include "device/gamepad/public/cpp/gamepad.h"
 #include "device/vr/openxr/openxr_api_wrapper.h"
@@ -90,11 +91,17 @@ XrResult OpenXRInputHelper::Initialize(
             xrGetSystemProperties(instance, system, &system_properties)) &&
         gaze_properties.supportsEyeGazeInteraction == XR_TRUE) {
       XrActionSetCreateInfo set_info = {XR_TYPE_ACTION_SET_CREATE_INFO};
-      std::snprintf(set_info.actionSetName, XR_MAX_ACTION_SET_NAME_SIZE, "%s",
-                    "chromium_eye_gaze");
-      std::snprintf(set_info.localizedActionSetName,
-                    XR_MAX_LOCALIZED_ACTION_SET_NAME_SIZE, "%s",
-                    "Chromium eye gaze");
+      base::span<char> action_set_name(set_info.actionSetName);
+      size_t copied_size =
+          base::strlcpy(action_set_name, "chromium_eye_gaze");
+      CHECK_LT(copied_size, action_set_name.size());
+
+      base::span<char> localized_action_set_name(
+          set_info.localizedActionSetName);
+      copied_size =
+          base::strlcpy(localized_action_set_name, "Chromium eye gaze");
+      CHECK_LT(copied_size, localized_action_set_name.size());
+
       RETURN_IF_XR_FAILED(
           xrCreateActionSet(instance, &set_info, &eye_gaze_action_set_));
 
@@ -103,10 +110,14 @@ XrResult OpenXRInputHelper::Initialize(
 
       XrActionCreateInfo action_info = {XR_TYPE_ACTION_CREATE_INFO};
       action_info.actionType = XR_ACTION_TYPE_POSE_INPUT;
-      std::snprintf(action_info.actionName, XR_MAX_ACTION_NAME_SIZE, "%s",
-                    "chromium_gaze_pose");
-      std::snprintf(action_info.localizedActionName,
-                    XR_MAX_LOCALIZED_ACTION_NAME_SIZE, "%s", "Eye gaze pose");
+
+      base::span<char> action_name(action_info.actionName);
+      copied_size = base::strlcpy(action_name, "chromium_gaze_pose");
+      CHECK_LT(copied_size, action_name.size());
+
+      base::span<char> localized_action_name(action_info.localizedActionName);
+      copied_size = base::strlcpy(localized_action_name, "Eye gaze pose");
+      CHECK_LT(copied_size, localized_action_name.size());
       action_info.countSubactionPaths = 1;
       action_info.subactionPaths = &eye_gaze_subaction_path_;
       RETURN_IF_XR_FAILED(xrCreateAction(eye_gaze_action_set_, &action_info,
