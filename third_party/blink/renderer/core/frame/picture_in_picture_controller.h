@@ -87,6 +87,10 @@ class CORE_EXPORT PictureInPictureController
   // Exits an internally managed immersive video session for the given element.
   virtual void ExitPictureInPictureImmersive(HTMLVideoElement&) {}
 
+  // Handles Escape while a browser-owned immersive video session is active.
+  // Returns true when the key was consumed by the immersive-media controller.
+  virtual bool HandleImmersivePictureInPictureEscape() { return false; }
+
   // Exit Picture-in-Picture for a video element and resolve promise if any.
   virtual void ExitPictureInPicture(HTMLVideoElement*,
                                     ScriptPromiseResolver<IDLUndefined>*) = 0;
