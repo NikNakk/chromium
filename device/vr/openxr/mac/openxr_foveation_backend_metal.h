@@ -21,14 +21,14 @@ class DEVICE_VR_EXPORT OpenXrFoveationBackendMetal final
   ~OpenXrFoveationBackendMetal() override;
 
   bool IsSupported() const override;
-  std::optional<OpenXrFoveationViewState> ConfigureView(
-      uint32_t view_index,
-      const OpenXrFoveationViewConfig& config) override;
-  void ResetView(uint32_t view_index) override;
+  std::optional<OpenXrFoveationTargetState> ConfigureTarget(
+      uint32_t target_index,
+      const OpenXrFoveationTargetConfig& config) override;
+  void ResetTarget(uint32_t target_index) override;
   void Reset() override;
 
   // Opaque MTLRasterizationRateMap for the Metal rendering path.
-  void* GetRasterizationRateMap(uint32_t view_index) const;
+  void* GetRasterizationRateMap(uint32_t target_index) const;
 
  private:
   class Impl;
