@@ -35,6 +35,7 @@
 #include "third_party/blink/renderer/platform/wtf/forward.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 #include "ui/gfx/geometry/size.h"
+#include "ui/gfx/geometry/transform.h"
 
 namespace blink {
 
@@ -43,6 +44,8 @@ class Navigator;
 class V8XRSessionMode;
 class XREquirectLayer;
 class XRFrameProvider;
+class XRMediaControlsDrawingContext;
+class XRQuadLayer;
 class XRReferenceSpace;
 class XRSession;
 class XRSessionInit;
@@ -109,6 +112,8 @@ class XRSystem final : public EventTarget,
   void RequestImmersiveMediaSession(HTMLVideoElement* video);
   void EndImmersiveMediaSession(HTMLVideoElement* video);
   bool HandleImmersiveMediaEscape();
+  bool HandleImmersiveMediaPrimaryAction();
+  void UpdateImmersiveMediaControlsGaze();
   bool ShouldKeepImmersiveMediaSessionOnFullscreenExit(
       HTMLVideoElement* video) const;
 
@@ -442,6 +447,13 @@ class XRSystem final : public EventTarget,
   XREquirectLayer* CreateImmersiveMediaLayer(XRSession* session,
                                              HTMLVideoElement* video,
                                              XRReferenceSpace* space);
+  XRQuadLayer* CreateImmersiveMediaControlsLayer(XRSession* session,
+                                                  XRReferenceSpace* space);
+  void InstallImmersiveMediaLayers();
+  bool PositionImmersiveMediaControlsAtCurrentView();
+  int ImmersiveMediaControlAtGaze() const;
+  void UpdateImmersiveMediaControlsState();
+  void ActivateImmersiveMediaControl(int control_index);
   void ScheduleImmersiveMediaLayerResize(gfx::Size decoded_size);
   void ApplyImmersiveMediaLayerResize();
 
@@ -502,8 +514,14 @@ class XRSystem final : public EventTarget,
   Member<XRSession> immersive_media_session_;
   Member<XRReferenceSpace> immersive_media_space_;
   Member<XREquirectLayer> immersive_media_layer_;
+  Member<XRQuadLayer> immersive_media_controls_layer_;
+  Member<XRMediaControlsDrawingContext> immersive_media_controls_context_;
   gfx::Size immersive_media_video_size_;
+  gfx::Transform immersive_media_controls_local_from_panel_;
   media::VideoSpatialFormat immersive_media_spatial_format_;
+  int immersive_media_controls_hovered_ = -1;
+  bool immersive_media_controls_pose_valid_ = false;
+  bool immersive_media_controls_visible_ = false;
   bool immersive_media_needs_eac_reprojection_ = false;
   bool immersive_media_resize_task_pending_ = false;
   bool immersive_media_request_pending_ = false;
