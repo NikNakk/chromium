@@ -41,6 +41,7 @@ class DEVICE_VR_EXPORT OpenXrGraphicsBindingMetal
   void OnSwapchainImageReady(OpenXrCompositionLayer& layer,
                              gpu::SharedImageInterface* sii) override;
   bool SupportsLayers() const override;
+  std::unique_ptr<OpenXrFoveationBackend> CreateFoveationBackend() override;
   void ResizeSharedBuffer(OpenXrCompositionLayer& layer,
                           OpenXrSwapchainInfo& swap_chain_info,
                           gpu::SharedImageInterface* sii) override;
