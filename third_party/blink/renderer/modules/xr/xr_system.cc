@@ -1238,7 +1238,6 @@ void XRSystem::EndImmersiveMediaSession(HTMLVideoElement* video) {
   immersive_media_space_ = nullptr;
   immersive_media_session_ = nullptr;
   immersive_media_video_size_ = gfx::Size();
-  immersive_media_pending_resize_size_ = gfx::Size();
   immersive_media_controls_hovered_ = -1;
   immersive_media_controls_pose_valid_ = false;
   immersive_media_controls_visible_ = false;
@@ -1621,7 +1620,6 @@ void XRSystem::ApplyImmersiveMediaLayerResize() {
   // allocates its OpenXR swapchain and SharedImages. The creation callback now
   // fires only after those resources are known to be drawable.
   immersive_media_pending_resize_layer_ = new_layer;
-  immersive_media_pending_resize_size_ = decoded_size;
   new_layer->SetBackendCreationCallback(
       BindOnce(&XRSystem::OnImmersiveMediaReplacementLayerReady,
                WrapWeakPersistent(this), WrapPersistent(new_layer),
