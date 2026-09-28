@@ -20,7 +20,8 @@
 
 #include "base/check.h"
 #include "base/logging.h"
-#include "base/memory/scoped_policy.h"\n#include "base/trace_event/trace_event.h"
+#include "base/memory/scoped_policy.h"
+#include "base/trace_event/trace_event.h"
 #include "components/viz/common/resources/shared_image_format.h"
 #include "device/vr/openxr/openxr_composition_layer.h"
 #include "device/vr/openxr/openxr_platform.h"
