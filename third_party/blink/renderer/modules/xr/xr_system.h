@@ -526,6 +526,7 @@ class XRSystem final : public EventTarget,
   Member<XRQuadLayer> immersive_media_controls_layer_;
   Member<XRMediaControlsDrawingContext> immersive_media_controls_context_;
   gfx::Size immersive_media_video_size_;
+  gfx::Size immersive_media_failed_resize_size_;
   gfx::Transform immersive_media_controls_local_from_panel_;
   media::VideoSpatialFormat immersive_media_spatial_format_;
   int immersive_media_controls_hovered_ = -1;
