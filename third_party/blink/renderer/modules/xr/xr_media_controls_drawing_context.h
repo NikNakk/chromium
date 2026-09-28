@@ -27,6 +27,10 @@ class XRMediaControlsDrawingContext final : public XRLayerDrawingContext {
 
   void SetState(bool paused, bool muted, int hovered_control);
 
+  // Hit-tests normalized panel coordinates in [0, 1]. Returns one of the five
+  // transport control indices, or -1 when the gaze falls between/outside them.
+  static int HitTest(float normalized_x, float normalized_y);
+
   // XRLayerDrawingContext.
   void OnFrameStart() override;
   void OnFrameEnd() override;
