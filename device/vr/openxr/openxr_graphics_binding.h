@@ -35,6 +35,7 @@ class ContextProvider;
 namespace device {
 class OpenXrCompositionLayer;
 class OpenXrExtensionEnumeration;
+class OpenXrFoveationBackend;
 class OpenXrViewConfiguration;
 
 // This class exists to provide an abstraction for the different rendering
@@ -140,6 +141,10 @@ class OpenXrGraphicsBinding {
 
   // Return if the graphics binding supports multiple XR layers.
   virtual bool SupportsLayers() const = 0;
+
+  // Creates a graphics-API-specific foveation implementation behind the
+  // generic Chromium-facing policy interface.
+  virtual std::unique_ptr<OpenXrFoveationBackend> CreateFoveationBackend();
 
   // Resizes the shared buffer for the given swapchain info if the transfer size
   // has changed.
