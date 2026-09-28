@@ -276,6 +276,12 @@ when testing fullscreen spatial-video handoff:
 --enable-features=OpenXR,ImmersiveVideoPlaybackViaOpenXr
 ```
 
+For the current windowed-playback and browser-owned controls experiments:
+
+```sh
+--enable-features=OpenXR,ImmersiveVideoPlaybackViaOpenXr,ImmersiveVideoKeepBrowserWindowed,ImmersiveVideoControlsViaOpenXr
+```
+
 Keeping these separate makes the macOS OpenXR runtime/backend independently
 upstreamable without automatically changing ordinary fullscreen `<video>`
 behaviour.
@@ -292,6 +298,10 @@ For a persistent development setup, the same features are exposed in
   the desktop browser window while leaving the OpenXR session active. **Escape**
   ends the windowed immersive-media session before the key is dispatched to page
   JavaScript;
+- **Immersive video controls via OpenXR** enables
+  `ImmersiveVideoControlsViaOpenXr`. If the runtime supports at least two
+  composition layers, Chromium adds a browser-owned transport quad over the
+  spatial-video layer;
 - the existing **Force WebXR Runtime** selector can optionally be set to
   **OpenXR** when more than one runtime is available.
 
@@ -320,6 +330,21 @@ session. This matters for extension-provided `data-xr-projection` hints and for
 adaptive streams: the page can return to its normal DOM state after fullscreen
 ends, while a later decoded-size increase can still rebuild the XR media layer
 with the same projection/stereo layout.
+
+When `ImmersiveVideoControlsViaOpenXr` is enabled, the UA session can also
+create a 1024x192 mono quad layer for transport controls. The panel is hidden
+initially. A completed primary controller click places it about 1.2 m in front
+of the current viewer pose and slightly below eye level. Head gaze highlights
+one of five controls; another click activates **-10 s**, **play/pause**,
+**+10 s**, **mute/unmute**, or **exit XR**. Clicking while gaze is outside a
+button hides the panel. The panel is browser-owned and operates directly on the
+source `HTMLVideoElement`, so the same controls work for native YouTube spatial
+video and extension-adapted players. The current first version uses head gaze
+rather than eye gaze or a tracked-controller ray.
+
+The control quad is only enabled when the runtime reports at least two render
+layers. It is preserved when an adaptive stream causes the equirect/mesh video
+layer to be rebuilt at a larger decoded resolution.
 
 The old SwiftXR Shell localhost handoff is no longer part of Chromium's generic
 session-creation code. Presentation ownership/yielding belongs in the runtime
