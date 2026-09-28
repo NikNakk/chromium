@@ -1238,6 +1238,7 @@ void XRSystem::EndImmersiveMediaSession(HTMLVideoElement* video) {
   immersive_media_space_ = nullptr;
   immersive_media_session_ = nullptr;
   immersive_media_video_size_ = gfx::Size();
+  immersive_media_failed_resize_size_ = gfx::Size();
   immersive_media_controls_hovered_ = -1;
   immersive_media_controls_pose_valid_ = false;
   immersive_media_controls_visible_ = false;
@@ -1574,6 +1575,7 @@ void XRSystem::ScheduleImmersiveMediaLayerResize(gfx::Size decoded_size) {
       static_cast<int64_t>(immersive_media_video_size_.width()) *
       immersive_media_video_size_.height();
   if (decoded_size.IsEmpty() || decoded_pixels <= current_layer_pixels ||
+      decoded_size == immersive_media_failed_resize_size_ ||
       !immersive_media_session_ || !immersive_media_video_ ||
       immersive_media_resize_task_pending_ ||
       immersive_media_pending_resize_layer_) {
@@ -1644,6 +1646,9 @@ void XRSystem::OnImmersiveMediaReplacementLayerReady(
   immersive_media_pending_resize_size_ = gfx::Size();
 
   if (!success || !immersive_media_session_ || !immersive_media_video_) {
+    if (!success) {
+      immersive_media_failed_resize_size_ = decoded_size;
+    }
     DVLOG(1) << "Replacement XR media layer failed for decoded size "
              << decoded_size.ToString() << "; keeping current layer";
     if (success && layer) {
@@ -1651,6 +1656,8 @@ void XRSystem::OnImmersiveMediaReplacementLayerReady(
     }
     return;
   }
+
+  immersive_media_failed_resize_size_ = gfx::Size();
 
   // Preserve the old Blink layer object through the enabled-layer transition.
   // SetEnabledCompositionLayers() now prepares the replacement first and only
@@ -2193,6 +2200,7 @@ void XRSystem::OnSessionEnded(XRSession* session) {
     immersive_media_session_ = nullptr;
     immersive_media_video_ = nullptr;
     immersive_media_video_size_ = gfx::Size();
+    immersive_media_failed_resize_size_ = gfx::Size();
     immersive_media_spatial_format_ = media::VideoSpatialFormat();
     immersive_media_controls_hovered_ = -1;
     immersive_media_controls_pose_valid_ = false;
