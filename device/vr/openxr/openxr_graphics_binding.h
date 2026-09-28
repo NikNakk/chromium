@@ -276,7 +276,7 @@ class OpenXrGraphicsBinding {
 
   // Specify the layers that should be rendered and should have shared
   // images available.
-  void SetEnabledCompositionLayers(const std::vector<LayerId>& layer_ids,
+  bool SetEnabledCompositionLayers(const std::vector<LayerId>& layer_ids,
                                    XrSession session,
                                    uint32_t swapchain_sample_count,
                                    gpu::SharedImageInterface* sii);
