@@ -4,6 +4,8 @@
 
 #include "device/vr/openxr/openxr_input_helper.h"
 
+#include <cstdio>
+
 #include "base/trace_event/trace_event.h"
 #include "device/gamepad/public/cpp/gamepad.h"
 #include "device/vr/openxr/openxr_api_wrapper.h"
@@ -20,6 +22,7 @@ namespace device {
 
 XrResult OpenXRInputHelper::CreateOpenXRInputHelper(
     XrInstance instance,
+    XrSystemId system,
     const std::string& system_name,
     const OpenXrExtensionHelper& extension_helper,
     XrSession session,
@@ -31,7 +34,7 @@ XrResult OpenXRInputHelper::CreateOpenXRInputHelper(
                                           hand_input_enabled);
 
   RETURN_IF_XR_FAILED(
-      new_helper->Initialize(instance, system_name, extension_helper));
+      new_helper->Initialize(instance, system, system_name, extension_helper));
   *helper = std::move(new_helper);
   return XR_SUCCESS;
 }
@@ -44,7 +47,14 @@ OpenXRInputHelper::OpenXRInputHelper(XrSession session,
       path_helper_(std::make_unique<OpenXRPathHelper>()),
       hand_input_enabled_(hand_input_enabled) {}
 
-OpenXRInputHelper::~OpenXRInputHelper() = default;
+OpenXRInputHelper::~OpenXRInputHelper() {
+  if (eye_gaze_space_ != XR_NULL_HANDLE) {
+    xrDestroySpace(eye_gaze_space_);
+  }
+  if (eye_gaze_action_set_ != XR_NULL_HANDLE) {
+    xrDestroyActionSet(eye_gaze_action_set_);
+  }
+}
 
 bool OpenXRInputHelper::IsHandTrackingEnabled() const {
   // As long as we have at least one controller that can supply hand tracking
@@ -57,6 +67,7 @@ bool OpenXRInputHelper::IsHandTrackingEnabled() const {
 
 XrResult OpenXRInputHelper::Initialize(
     XrInstance instance,
+    XrSystemId system,
     const std::string& system_name,
     const OpenXrExtensionHelper& extension_helper) {
   RETURN_IF_XR_FAILED(path_helper_->Initialize(instance, system_name));
@@ -65,6 +76,54 @@ XrResult OpenXRInputHelper::Initialize(
   // profiles. This allows the runtime to choose a different input sources based
   // on availability.
   std::map<XrPath, std::vector<XrActionSuggestedBinding>> bindings;
+
+  // Eye gaze participates in the same one-shot action-set attachment as the
+  // controllers. OpenXR does not permit attaching another action set later in
+  // the session, so this must be created before xrAttachSessionActionSets.
+  if (extension_helper.ExtensionEnumeration()->ExtensionSupported(
+          XR_EXT_EYE_GAZE_INTERACTION_EXTENSION_NAME)) {
+    XrSystemEyeGazeInteractionPropertiesEXT gaze_properties = {
+        XR_TYPE_SYSTEM_EYE_GAZE_INTERACTION_PROPERTIES_EXT};
+    XrSystemProperties system_properties = {XR_TYPE_SYSTEM_PROPERTIES};
+    system_properties.next = &gaze_properties;
+    if (XR_SUCCEEDED(
+            xrGetSystemProperties(instance, system, &system_properties)) &&
+        gaze_properties.supportsEyeGazeInteraction == XR_TRUE) {
+      XrActionSetCreateInfo set_info = {XR_TYPE_ACTION_SET_CREATE_INFO};
+      std::snprintf(set_info.actionSetName, XR_MAX_ACTION_SET_NAME_SIZE, "%s",
+                    "chromium_eye_gaze");
+      std::snprintf(set_info.localizedActionSetName,
+                    XR_MAX_LOCALIZED_ACTION_SET_NAME_SIZE, "%s",
+                    "Chromium eye gaze");
+      RETURN_IF_XR_FAILED(
+          xrCreateActionSet(instance, &set_info, &eye_gaze_action_set_));
+
+      RETURN_IF_XR_FAILED(xrStringToPath(instance, "/user/eyes_ext",
+                                         &eye_gaze_subaction_path_));
+
+      XrActionCreateInfo action_info = {XR_TYPE_ACTION_CREATE_INFO};
+      action_info.actionType = XR_ACTION_TYPE_POSE_INPUT;
+      std::snprintf(action_info.actionName, XR_MAX_ACTION_NAME_SIZE, "%s",
+                    "chromium_gaze_pose");
+      std::snprintf(action_info.localizedActionName,
+                    XR_MAX_LOCALIZED_ACTION_NAME_SIZE, "%s", "Eye gaze pose");
+      action_info.countSubactionPaths = 1;
+      action_info.subactionPaths = &eye_gaze_subaction_path_;
+      RETURN_IF_XR_FAILED(xrCreateAction(eye_gaze_action_set_, &action_info,
+                                         &eye_gaze_action_));
+
+      XrPath interaction_profile = XR_NULL_PATH;
+      XrPath binding_path = XR_NULL_PATH;
+      RETURN_IF_XR_FAILED(xrStringToPath(
+          instance, "/interaction_profiles/ext/eye_gaze_interaction",
+          &interaction_profile));
+      RETURN_IF_XR_FAILED(xrStringToPath(
+          instance, "/user/eyes_ext/input/gaze_ext/pose", &binding_path));
+      bindings[interaction_profile].push_back(
+          {eye_gaze_action_, binding_path});
+      eye_gaze_enabled_ = true;
+    }
+  }
 
   for (size_t i = 0; i < controller_states_.size(); i++) {
     RETURN_IF_XR_FAILED(controller_states_[i].controller.Initialize(
@@ -85,9 +144,13 @@ XrResult OpenXRInputHelper::Initialize(
         instance, &profile_suggested_bindings));
   }
 
-  std::vector<XrActionSet> action_sets(controller_states_.size());
+  std::vector<XrActionSet> action_sets;
+  action_sets.reserve(controller_states_.size() + (eye_gaze_enabled_ ? 1 : 0));
   for (size_t i = 0; i < controller_states_.size(); i++) {
-    action_sets[i] = controller_states_[i].controller.action_set();
+    action_sets.push_back(controller_states_[i].controller.action_set());
+  }
+  if (eye_gaze_enabled_) {
+    action_sets.push_back(eye_gaze_action_set_);
   }
 
   XrSessionActionSetsAttachInfo attach_info = {
@@ -95,6 +158,15 @@ XrResult OpenXRInputHelper::Initialize(
   attach_info.countActionSets = action_sets.size();
   attach_info.actionSets = action_sets.data();
   RETURN_IF_XR_FAILED(xrAttachSessionActionSets(session_, &attach_info));
+
+  if (eye_gaze_enabled_) {
+    XrActionSpaceCreateInfo space_info = {XR_TYPE_ACTION_SPACE_CREATE_INFO};
+    space_info.action = eye_gaze_action_;
+    space_info.subactionPath = eye_gaze_subaction_path_;
+    space_info.poseInActionSpace.orientation.w = 1.0f;
+    RETURN_IF_XR_FAILED(
+        xrCreateActionSpace(session_, &space_info, &eye_gaze_space_));
+  }
 
   return XR_SUCCESS;
 }
@@ -184,6 +256,34 @@ std::vector<mojom::XRInputSourceStatePtr> OpenXRInputHelper::GetInputState(
   return input_states;
 }
 
+std::optional<XrPosef> OpenXRInputHelper::GetEyeGazePose(
+    XrSpace base_space,
+    XrTime predicted_display_time) const {
+  if (!eye_gaze_enabled_ || eye_gaze_action_ == XR_NULL_HANDLE ||
+      eye_gaze_space_ == XR_NULL_HANDLE) {
+    return std::nullopt;
+  }
+
+  XrActionStateGetInfo get_info = {XR_TYPE_ACTION_STATE_GET_INFO};
+  get_info.action = eye_gaze_action_;
+  get_info.subactionPath = eye_gaze_subaction_path_;
+  XrActionStatePose pose_state = {XR_TYPE_ACTION_STATE_POSE};
+  if (XR_FAILED(
+          xrGetActionStatePose(session_, &get_info, &pose_state)) ||
+      pose_state.isActive != XR_TRUE) {
+    return std::nullopt;
+  }
+
+  XrSpaceLocation location = {XR_TYPE_SPACE_LOCATION};
+  if (XR_FAILED(xrLocateSpace(eye_gaze_space_, base_space,
+                              predicted_display_time, &location)) ||
+      !(location.locationFlags & XR_SPACE_LOCATION_ORIENTATION_VALID_BIT)) {
+    return std::nullopt;
+  }
+
+  return location.pose;
+}
+
 XrResult OpenXRInputHelper::OnInteractionProfileChanged() {
   for (OpenXrControllerState& controller_state : controller_states_) {
     RETURN_IF_XR_FAILED(controller_state.controller.UpdateInteractionProfile());
@@ -192,12 +292,17 @@ XrResult OpenXRInputHelper::OnInteractionProfileChanged() {
 }
 
 XrResult OpenXRInputHelper::SyncActions(XrTime predicted_display_time) {
-  std::vector<XrActiveActionSet> active_action_sets(controller_states_.size());
+  std::vector<XrActiveActionSet> active_action_sets;
+  active_action_sets.reserve(controller_states_.size() +
+                             (eye_gaze_enabled_ ? 1 : 0));
 
   for (size_t i = 0; i < controller_states_.size(); i++) {
-    active_action_sets[i].actionSet =
-        controller_states_[i].controller.action_set();
-    active_action_sets[i].subactionPath = XR_NULL_PATH;
+    active_action_sets.push_back(
+        {controller_states_[i].controller.action_set(), XR_NULL_PATH});
+  }
+  if (eye_gaze_enabled_) {
+    active_action_sets.push_back(
+        {eye_gaze_action_set_, eye_gaze_subaction_path_});
   }
 
   XrActionsSyncInfo sync_info = {XR_TYPE_ACTIONS_SYNC_INFO};
