@@ -449,10 +449,11 @@ class XRSession final : public EventTarget,
 
   device::mojom::blink::XRLayerManager* LayerManager();
 
-  // Installs and continuously drives a single UA-owned composition layer.
-  // Used by browser-native immersive media playback, where there is no page
+  // Installs and continuously drives UA-owned composition layers. Used by
+  // browser-native immersive media playback, where there is no page
   // requestAnimationFrame callback to keep the XR frame loop alive.
   void SetInternalCompositionLayer(XRLayer* layer);
+  void SetInternalCompositionLayers(HeapVector<Member<XRLayer>> layers);
 
   // This is an opportunity for the session to dispatch any initial set of
   // events. Called by |XrSystem| after the session query has resolved.
