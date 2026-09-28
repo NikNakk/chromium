@@ -862,6 +862,7 @@ void OpenXrRenderLoop::StartRuntime(
     // StopRuntime, which should be resilient to duplicate calls.
     ExitPresent(ExitXrPresentReason::kStartRuntimeFailed);
     StopRuntime();
+    MaybeRejectSessionCallback();
   }
 }
 
