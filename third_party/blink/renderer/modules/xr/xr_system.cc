@@ -185,8 +185,7 @@ ImmersiveMediaSpatialFormat GetImmersiveMediaSpatialFormat(
     }
     result.needs_eac_reprojection = true;
     LOG(INFO) << "Immersive media: YouTube EAC reprojection selected "
-              << "host=" << host
-              << " spherical_control=" << youtube_spherical_control
+              << "spherical_control=" << youtube_spherical_control
               << " format=" << result.spatial_format.ToString();
     return result;
   }
@@ -1383,6 +1382,13 @@ XREquirectLayer* XRSystem::CreateImmersiveMediaLayer(
       spatial_format.projection_data,
       BindRepeating(&XRSystem::ScheduleImmersiveMediaLayerResize,
                     WrapWeakPersistent(this)));
+
+  LOG(INFO) << "Immersive media layer: format="
+            << spatial_format.ToString()
+            << " needs_eac_reprojection="
+            << immersive_format.needs_eac_reprojection
+            << " texture=" << drawing_context->TextureWidth() << "x"
+            << drawing_context->TextureHeight();
 
   auto* init = XREquirectLayerInit::Create();
   init->setSpace(space);
