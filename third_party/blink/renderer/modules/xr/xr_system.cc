@@ -1643,7 +1643,6 @@ void XRSystem::OnImmersiveMediaReplacementLayerReady(
   }
 
   immersive_media_pending_resize_layer_ = nullptr;
-  immersive_media_pending_resize_size_ = gfx::Size();
 
   if (!success || !immersive_media_session_ || !immersive_media_video_) {
     if (!success) {
