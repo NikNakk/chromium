@@ -107,6 +107,9 @@ class XRSystem final : public EventTarget,
   // and OpenXR transport implementation.
   void RequestImmersiveMediaSession(HTMLVideoElement* video);
   void EndImmersiveMediaSession(HTMLVideoElement* video);
+  bool HandleImmersiveMediaEscape();
+  bool ShouldKeepImmersiveMediaSessionOnFullscreenExit(
+      HTMLVideoElement* video) const;
 
   XRFrameProvider* frameProvider();
 
@@ -433,6 +436,7 @@ class XRSystem final : public EventTarget,
   void OnImmersiveMediaSessionReturned(
       HTMLVideoElement* video,
       device::mojom::blink::RequestSessionResultPtr result);
+  void OnImmersiveMediaDesktopFullscreenExited();
 
   XREquirectLayer* CreateImmersiveMediaLayer(XRSession* session,
                                              HTMLVideoElement* video,
@@ -500,6 +504,7 @@ class XRSystem final : public EventTarget,
   gfx::Size immersive_media_video_size_;
   bool immersive_media_resize_task_pending_ = false;
   bool immersive_media_request_pending_ = false;
+  bool immersive_media_windowed_ = false;
 
   HeapMojoRemote<device::mojom::blink::VRService> service_;
   HeapMojoAssociatedRemote<
