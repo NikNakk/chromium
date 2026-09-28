@@ -1764,6 +1764,10 @@ BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kImmersiveVideoPlaybackViaOpenXr);
 // immersive video has successfully started.
 BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kImmersiveVideoKeepBrowserWindowed);
 
+// Enables the UA-owned OpenXR transport panel for browser-native immersive
+// video playback.
+BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kImmersiveVideoControlsViaOpenXr);
+
 BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kUACHOverrideBlank);
 
 BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(
