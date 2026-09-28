@@ -456,6 +456,9 @@ class XRSystem final : public EventTarget,
   void ActivateImmersiveMediaControl(int control_index);
   void ScheduleImmersiveMediaLayerResize(gfx::Size decoded_size);
   void ApplyImmersiveMediaLayerResize();
+  void OnImmersiveMediaReplacementLayerReady(XREquirectLayer* layer,
+                                              gfx::Size decoded_size,
+                                              bool success);
 
   void EnsureDevice();
 
@@ -514,9 +517,16 @@ class XRSystem final : public EventTarget,
   Member<XRSession> immersive_media_session_;
   Member<XRReferenceSpace> immersive_media_space_;
   Member<XREquirectLayer> immersive_media_layer_;
+  Member<XREquirectLayer> immersive_media_pending_resize_layer_;
+  // Keep the most recently replaced layer alive until the backend has observed
+  // the new enabled-layer sequence. Its swapchain is retired transactionally
+  // by the OpenXR backend; retaining the Blink object avoids destroying the
+  // backend before that switch has happened.
+  Member<XREquirectLayer> immersive_media_retired_layer_;
   Member<XRQuadLayer> immersive_media_controls_layer_;
   Member<XRMediaControlsDrawingContext> immersive_media_controls_context_;
   gfx::Size immersive_media_video_size_;
+  gfx::Size immersive_media_pending_resize_size_;
   gfx::Transform immersive_media_controls_local_from_panel_;
   media::VideoSpatialFormat immersive_media_spatial_format_;
   int immersive_media_controls_hovered_ = -1;
