@@ -1760,6 +1760,10 @@ BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kThrottleFullscreenVideoActiveTab);
 // fullscreen video behaviour rather than exposing only the WebXR API.
 BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kImmersiveVideoPlaybackViaOpenXr);
 
+// Leaves the desktop browser window out of fullscreen after browser-owned
+// immersive video has successfully started.
+BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kImmersiveVideoKeepBrowserWindowed);
+
 BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kUACHOverrideBlank);
 
 BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(
