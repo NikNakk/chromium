@@ -32,6 +32,7 @@
 #include "third_party/blink/renderer/platform/scheduler/public/frame_or_worker_scheduler.h"
 #include "third_party/blink/renderer/platform/supplementable.h"
 #include "third_party/blink/renderer/platform/wtf/forward.h"
+#include "media/base/video_spatial_format.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 #include "ui/gfx/geometry/size.h"
 
@@ -502,6 +503,8 @@ class XRSystem final : public EventTarget,
   Member<XRReferenceSpace> immersive_media_space_;
   Member<XREquirectLayer> immersive_media_layer_;
   gfx::Size immersive_media_video_size_;
+  media::VideoSpatialFormat immersive_media_spatial_format_;
+  bool immersive_media_needs_eac_reprojection_ = false;
   bool immersive_media_resize_task_pending_ = false;
   bool immersive_media_request_pending_ = false;
   bool immersive_media_windowed_ = false;
