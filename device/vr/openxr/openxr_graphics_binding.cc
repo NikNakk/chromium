@@ -158,24 +158,24 @@ OpenXrGraphicsBinding::GetBaseLayerProjectionViews(
   std::vector<XrCompositionLayerProjectionView> projection_views =
       GetProjectionViews(view_config, *base_layer_);
 
-  // Keep the projection metadata paired with the pixels that are actually
-  // submitted to the runtime. When WebXR intentionally skips a render, the
-  // base layer keeps presenting the previously released swapchain image; using
-  // the new frame's view pose for those old pixels would make runtime
-  // reprojection believe the stale image was rendered from the current head
-  // pose.
+  // Keep projection metadata and foveation mapping paired with the image whose
+  // pixels are actually submitted. Sparse WebXR frames reuse the previously
+  // released image, so they must reuse both the old pose/FOV and the old map.
   if (base_layer_->is_rendered()) {
     last_rendered_base_projection_views_[view_config.Type()] =
         projection_views;
-    // Keep the foveation mapping paired with the swapchain image whose pixels
-  // were actually rendered. Sparse WebXR frames reuse the previous released
-  // image and therefore must reuse its mapping as well.
-  if (base_layer_->is_rendered()) {
+
     if (current_base_foveation_mapping_) {
       last_rendered_base_foveation_mappings_[view_config.Type()] =
           *current_base_foveation_mapping_;
     } else {
       last_rendered_base_foveation_mappings_.erase(view_config.Type());
+    }
+  } else {
+    auto cached =
+        last_rendered_base_projection_views_.find(view_config.Type());
+    if (cached != last_rendered_base_projection_views_.end()) {
+      projection_views = cached->second;
     }
   }
 
@@ -191,17 +191,6 @@ OpenXrGraphicsBinding::GetBaseLayerProjectionViews(
     }
   }
 
-  return projection_views;
-  }
-
-  auto cached =
-      last_rendered_base_projection_views_.find(view_config.Type());
-  if (cached != last_rendered_base_projection_views_.end()) {
-    return cached->second;
-  }
-
-  // Before the first rendered base-layer frame there is nothing valid to reuse.
-  // Preserve the existing behaviour until a rendered image establishes a cache.
   return projection_views;
 }
 
