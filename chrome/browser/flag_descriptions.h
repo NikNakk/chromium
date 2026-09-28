@@ -6737,6 +6737,12 @@ inline constexpr char kImmersiveVideoPlaybackViaOpenXrDescription[] =
     "Enables browser-owned immersive playback of supported fullscreen spatial "
     "video through OpenXR.";
 
+inline constexpr char kImmersiveVideoKeepBrowserWindowedName[] =
+    "Keep browser windowed during immersive video";
+inline constexpr char kImmersiveVideoKeepBrowserWindowedDescription[] =
+    "After browser-owned immersive video starts, exits desktop fullscreen while "
+    "keeping the OpenXR media session active. Escape exits immersive video.";
+
 inline constexpr char kOpenXRAndroidSmoothDepthName[] =
     "Enable OpenXR Smooth Depth";
 inline constexpr char kOpenXRAndroidSmoothDepthDescription[] =
