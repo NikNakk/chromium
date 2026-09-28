@@ -2185,6 +2185,8 @@ void XRSystem::MakeXrCompatibleSync(
 void XRSystem::OnSessionEnded(XRSession* session) {
   if (session == immersive_media_session_) {
     immersive_media_layer_ = nullptr;
+    immersive_media_pending_resize_layer_ = nullptr;
+    immersive_media_retired_layer_ = nullptr;
     immersive_media_controls_layer_ = nullptr;
     immersive_media_controls_context_ = nullptr;
     immersive_media_space_ = nullptr;
@@ -2567,6 +2569,8 @@ void XRSystem::Trace(Visitor* visitor) const {
   visitor->Trace(immersive_media_session_);
   visitor->Trace(immersive_media_space_);
   visitor->Trace(immersive_media_layer_);
+  visitor->Trace(immersive_media_pending_resize_layer_);
+  visitor->Trace(immersive_media_retired_layer_);
   visitor->Trace(immersive_media_controls_layer_);
   visitor->Trace(immersive_media_controls_context_);
   visitor->Trace(service_);
