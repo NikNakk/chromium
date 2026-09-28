@@ -1231,11 +1231,14 @@ void XRSystem::EndImmersiveMediaSession(HTMLVideoElement* video) {
 
   XRSession* session = immersive_media_session_.Get();
   immersive_media_layer_ = nullptr;
+  immersive_media_pending_resize_layer_ = nullptr;
+  immersive_media_retired_layer_ = nullptr;
   immersive_media_controls_layer_ = nullptr;
   immersive_media_controls_context_ = nullptr;
   immersive_media_space_ = nullptr;
   immersive_media_session_ = nullptr;
   immersive_media_video_size_ = gfx::Size();
+  immersive_media_pending_resize_size_ = gfx::Size();
   immersive_media_controls_hovered_ = -1;
   immersive_media_controls_pose_valid_ = false;
   immersive_media_controls_visible_ = false;
@@ -1573,7 +1576,8 @@ void XRSystem::ScheduleImmersiveMediaLayerResize(gfx::Size decoded_size) {
       immersive_media_video_size_.height();
   if (decoded_size.IsEmpty() || decoded_pixels <= current_layer_pixels ||
       !immersive_media_session_ || !immersive_media_video_ ||
-      immersive_media_resize_task_pending_) {
+      immersive_media_resize_task_pending_ ||
+      immersive_media_pending_resize_layer_) {
     return;
   }
 
@@ -1588,7 +1592,8 @@ void XRSystem::ApplyImmersiveMediaLayerResize() {
   immersive_media_resize_task_pending_ = false;
 
   if (!immersive_media_session_ || !immersive_media_video_ ||
-      !immersive_media_space_ || !immersive_media_video_->GetWebMediaPlayer()) {
+      !immersive_media_space_ || !immersive_media_video_->GetWebMediaPlayer() ||
+      immersive_media_pending_resize_layer_) {
     return;
   }
 
@@ -1612,18 +1617,56 @@ void XRSystem::ApplyImmersiveMediaLayerResize() {
     return;
   }
 
-  // CreateImmersiveMediaLayer() has already queued creation of the new backend.
-  // This task runs after the frame that noticed the size change has finished,
-  // so the old layer can now be retired before the next internal frame.
-  if (immersive_media_layer_) {
-    immersive_media_layer_->DestroyBackend();
+  // Keep the currently enabled layer untouched while the replacement backend
+  // allocates its OpenXR swapchain and SharedImages. The creation callback now
+  // fires only after those resources are known to be drawable.
+  immersive_media_pending_resize_layer_ = new_layer;
+  immersive_media_pending_resize_size_ = decoded_size;
+  new_layer->SetBackendCreationCallback(
+      BindOnce(&XRSystem::OnImmersiveMediaReplacementLayerReady,
+               WrapWeakPersistent(this), WrapPersistent(new_layer),
+               decoded_size));
+
+  DVLOG(1) << "Preparing replacement XR media layer for decoded size "
+           << decoded_size.ToString();
+}
+
+void XRSystem::OnImmersiveMediaReplacementLayerReady(
+    XREquirectLayer* layer,
+    gfx::Size decoded_size,
+    bool success) {
+  if (layer != immersive_media_pending_resize_layer_) {
+    if (success && layer) {
+      layer->DestroyBackend();
+    }
+    return;
   }
 
+  immersive_media_pending_resize_layer_ = nullptr;
+  immersive_media_pending_resize_size_ = gfx::Size();
+
+  if (!success || !immersive_media_session_ || !immersive_media_video_) {
+    DVLOG(1) << "Replacement XR media layer failed for decoded size "
+             << decoded_size.ToString() << "; keeping current layer";
+    if (success && layer) {
+      layer->DestroyBackend();
+    }
+    return;
+  }
+
+  // Preserve the old Blink layer object through the enabled-layer transition.
+  // SetEnabledCompositionLayers() now prepares the replacement first and only
+  // then retires the old swapchain, so playback never passes through an empty
+  // SharedImage frame.
+  if (immersive_media_retired_layer_) {
+    immersive_media_retired_layer_->DestroyBackend();
+  }
+  immersive_media_retired_layer_ = immersive_media_layer_;
+  immersive_media_layer_ = layer;
   immersive_media_video_size_ = decoded_size;
-  immersive_media_layer_ = new_layer;
   InstallImmersiveMediaLayers();
 
-  DVLOG(1) << "Recreated XR media layer for decoded size "
+  DVLOG(1) << "Switched XR media layer to decoded size "
            << decoded_size.ToString();
 }
 
