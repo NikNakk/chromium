@@ -6,6 +6,7 @@
 #define THIRD_PARTY_BLINK_RENDERER_MODULES_XR_XR_MEDIA_CONTROLS_DRAWING_CONTEXT_H_
 
 #include <cstdint>
+#include <memory>
 
 #include "gpu/command_buffer/common/sync_token.h"
 #include "third_party/blink/renderer/modules/xr/xr_layer_drawing_context.h"
