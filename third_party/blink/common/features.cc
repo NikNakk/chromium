@@ -2319,6 +2319,11 @@ BASE_FEATURE(kThrottleFullscreenVideoActiveTab,
 BASE_FEATURE(kImmersiveVideoPlaybackViaOpenXr,
              base::FEATURE_DISABLED_BY_DEFAULT);
 
+// When browser-owned immersive video is active, leave DOM fullscreen after the
+// XR media layer is established so the desktop browser window remains normal.
+BASE_FEATURE(kImmersiveVideoKeepBrowserWindowed,
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
 // Changes behavior of User-Agent Client Hints to send blank headers when the
 // User-Agent string is overridden, instead of disabling the headers altogether.
 BASE_FEATURE(kUACHOverrideBlank, base::FEATURE_DISABLED_BY_DEFAULT);
