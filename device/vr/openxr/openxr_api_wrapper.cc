@@ -1537,7 +1537,17 @@ mojom::XRFoveationDataPtr OpenXrApiWrapper::GetFoveationData() const {
   data->policy->center_half_extent = foveation_policy_->center_half_extent;
   data->policy->middle_half_extent = foveation_policy_->middle_half_extent;
 
-  for (const XrView& view : primary_view_config_.Views()) {
+  std::vector<gfx::PointF> target_centers;
+  target_centers.reserve(primary_view_config_.Views().size());
+  const gfx::Size target_size =
+      graphics_binding_->GetProjectionLayerSwapchainImageSize();
+  if (target_size.IsEmpty()) {
+    return nullptr;
+  }
+
+  float x_offset = static_cast<float>(primary_view_config_.Viewport().x());
+  for (size_t i = 0; i < primary_view_config_.Views().size(); ++i) {
+    const XrView& view = primary_view_config_.Views()[i];
     const float left = std::tan(view.fov.angleLeft);
     const float right = std::tan(view.fov.angleRight);
     const float down = std::tan(view.fov.angleDown);
@@ -1546,12 +1556,29 @@ mojom::XRFoveationDataPtr OpenXrApiWrapper::GetFoveationData() const {
       return nullptr;
     }
 
-    auto view_data = mojom::XRFoveationViewData::New();
-    view_data->center_x =
+    const float center_x =
         std::clamp((tangent_x - left) / (right - left), 0.0f, 1.0f);
-    view_data->center_y =
+    const float center_y =
         std::clamp(1.0f - (tangent_y - down) / (up - down), 0.0f, 1.0f);
+
+    auto view_data = mojom::XRFoveationViewData::New();
+    view_data->center_x = center_x;
+    view_data->center_y = center_y;
     data->views.push_back(std::move(view_data));
+
+    const auto& properties = primary_view_config_.Properties()[i];
+    target_centers.emplace_back(
+        (x_offset + center_x * properties.Width()) / target_size.width(),
+        (center_y * properties.Height()) / target_size.height());
+    x_offset += properties.Width();
+  }
+
+  // Build the compositor-side mirror of the backend rate map before telling
+  // Blink to foveate the render target. If the native backend cannot represent
+  // this policy, leave the frame unfoveated on both sides.
+  if (!graphics_binding_->ConfigureBaseLayerFoveation(*foveation_policy_,
+                                                       target_centers)) {
+    return nullptr;
   }
 
   return data;
