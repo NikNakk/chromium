@@ -6,6 +6,7 @@
 
 #include <utility>
 
+#include "base/logging.h"
 #include "build/build_config.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
@@ -557,15 +558,19 @@ void XRFrameProvider::ProcessScheduledFrame(
       return;
     }
 
-#if DCHECK_IS_ON()
-    // Sanity check: if drawing into a shared buffer, the optional shared image
-    // must be present. Exception is the first immersive frame after a
-    // transition where the frame ID wasn't set yet. In that case, drawing can
-    // proceed, but the result will be discarded in SubmitWebGLLayer().
-    if (frame_transport_->DrawingIntoSharedBuffer() && frame_id_ >= 0) {
-      DCHECK(shared_images_.size());
+    // A drawable shared-buffer frame must carry at least one SharedImage.
+    // Treat a missing image as a transport/runtime failure rather than letting
+    // the renderer enter the page's XR animation callback with an unusable
+    // framebuffer. This can happen if the OpenXR compositor disconnects while
+    // creating or recreating a swapchain.
+    if (frame_transport_->DrawingIntoSharedBuffer() && frame_id_ >= 0 &&
+        shared_images_.empty()) {
+      LOG(ERROR) << __func__
+                 << ": drawable immersive frame has no SharedImages; ending "
+                    "XR session";
+      immersive_session_->ForceEnd(XRSession::ShutdownPolicy::kImmediate);
+      return;
     }
-#endif
     // Run immersive_session_->OnFrame() in a posted task to ensure that
     // createAnchor promises get a chance to run - the presentation frame state
     // is already updated.
