@@ -311,6 +311,13 @@ class OpenXrGraphicsBinding {
   virtual std::unique_ptr<OpenXrCompositionLayer::GraphicsBindingData>
   CreateLayerGraphicsBindingData() const = 0;
 
+  // Publish/remove backend transport metadata for the currently acquired base
+  // projection image. Generic policy stays above this boundary; platform
+  // bindings choose how the renderer process receives it.
+  virtual bool PublishBaseLayerFoveation(
+      const OpenXrFoveationTargetConfig& config);
+  virtual void ClearPublishedBaseLayerFoveation();
+
   // Called when SetOverlayAndWebXrVisibility is called and the internal flags
   // have been updated.
   virtual void OnSetOverlayAndWebXrVisibility() {}
