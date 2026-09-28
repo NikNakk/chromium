@@ -19,7 +19,8 @@ namespace device {
 
 // static
 std::vector<std::string> OpenXrGraphicsBinding::GetOptionalExtensions() {
-  return {XR_FB_COMPOSITION_LAYER_IMAGE_LAYOUT_EXTENSION_NAME};
+  return {XR_FB_COMPOSITION_LAYER_IMAGE_LAYOUT_EXTENSION_NAME,
+          XR_MNDX_FOVEATION_EXTENSION_NAME};
 }
 
 OpenXrGraphicsBinding::OpenXrGraphicsBinding(
