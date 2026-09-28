@@ -50,10 +50,23 @@ void XRLayer::OnBackendLayerCreated(
     device::mojom::blink::CreateCompositionLayerResult result) {
   is_backend_active_ =
       result == device::mojom::blink::CreateCompositionLayerResult::SUCCESS;
+  backend_creation_complete_ = true;
+  if (backend_creation_callback_) {
+    std::move(backend_creation_callback_).Run(is_backend_active_);
+  }
 }
 
 bool XRLayer::IsBackendActive() const {
   return is_backend_active_;
+}
+
+void XRLayer::SetBackendCreationCallback(
+    base::OnceCallback<void(bool)> callback) {
+  if (backend_creation_complete_) {
+    std::move(callback).Run(is_backend_active_);
+    return;
+  }
+  backend_creation_callback_ = std::move(callback);
 }
 
 void XRLayer::DestroyBackend() {
