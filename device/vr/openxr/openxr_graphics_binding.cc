@@ -8,6 +8,7 @@
 #include "components/viz/common/gpu/context_provider.h"
 #include "device/vr/openxr/openxr_api_wrapper.h"
 #include "device/vr/openxr/openxr_extension_helper.h"
+#include "device/vr/openxr/openxr_foveation.h"
 #include "device/vr/openxr/openxr_util.h"
 #include "device/vr/openxr/openxr_view_configuration.h"
 #include "third_party/abseil-cpp/absl/container/flat_hash_set.h"
@@ -48,6 +49,11 @@ bool OpenXrGraphicsBinding::ShouldRenderBaseLayer() const {
 
 bool OpenXrGraphicsBinding::RequiresSharedImages() const {
   return false;
+}
+
+std::unique_ptr<OpenXrFoveationBackend>
+OpenXrGraphicsBinding::CreateFoveationBackend() {
+  return nullptr;
 }
 
 void OpenXrGraphicsBinding::OnSessionCreated(XrSpace local_space,
