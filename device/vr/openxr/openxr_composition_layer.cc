@@ -5,6 +5,8 @@
 #include "device/vr/openxr/openxr_composition_layer.h"
 
 #include <algorithm>
+
+#include "base/logging.h"
 #include "base/time/time.h"
 #include "device/vr/openxr/openxr_graphics_binding.h"
 #include "device/vr/openxr/openxr_platform.h"
@@ -143,8 +145,19 @@ XrResult OpenXrCompositionLayer::CreateSwapchain(XrSession session,
   swapchain_create_info.sampleCount = sample_count;
   swapchain_create_info.usageFlags = XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT;
   XrSwapchain color_swapchain;
-  RETURN_IF_XR_FAILED(
-      xrCreateSwapchain(session, &swapchain_create_info, &color_swapchain));
+  const XrResult create_result =
+      xrCreateSwapchain(session, &swapchain_create_info, &color_swapchain);
+  if (XR_FAILED(create_result)) {
+    LOG(ERROR) << __func__ << ": xrCreateSwapchain failed result="
+               << create_result << " format=" << swapchain_create_info.format
+               << " size=" << swapchain_create_info.width << "x"
+               << swapchain_create_info.height
+               << " arraySize=" << swapchain_create_info.arraySize
+               << " sampleCount=" << swapchain_create_info.sampleCount
+               << " createFlags=" << swapchain_create_info.createFlags
+               << " usageFlags=" << swapchain_create_info.usageFlags;
+    return create_result;
+  }
 
   color_swapchain_ = color_swapchain;
   needs_redraw_ = true;
