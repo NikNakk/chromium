@@ -286,6 +286,12 @@ For a persistent development setup, the same features are exposed in
 - **Enable OpenXR WebXR Runtime** enables `OpenXR`;
 - **Immersive video playback via OpenXR** enables
   `ImmersiveVideoPlaybackViaOpenXr`;
+- **Keep browser windowed during immersive video** enables
+  `ImmersiveVideoKeepBrowserWindowed`. Chromium still enters fullscreen long
+  enough to validate and establish the UA-owned XR media session, then restores
+  the desktop browser window while leaving the OpenXR session active. **Escape**
+  ends the windowed immersive-media session before the key is dispatched to page
+  JavaScript;
 - the existing **Force WebXR Runtime** selector can optionally be set to
   **OpenXR** when more than one runtime is available.
 
@@ -305,7 +311,15 @@ The privileged UA-owned immersive-media bypass is browser-validated: the
 browser verifies that the requesting frame is in fullscreen and has an active
 effectively-fullscreen video before skipping the normal transient activation /
 origin VR permission checks. Blink's renderer-provided flag is not sufficient
-by itself.
+by itself. When `ImmersiveVideoKeepBrowserWindowed` is enabled, this validation
+still happens while fullscreen is active; only after the native XR media layer
+has been created does Blink deliberately exit desktop fullscreen.
+
+The resolved spatial format is cached for the lifetime of the UA-owned media
+session. This matters for extension-provided `data-xr-projection` hints and for
+adaptive streams: the page can return to its normal DOM state after fullscreen
+ends, while a later decoded-size increase can still rebuild the XR media layer
+with the same projection/stereo layout.
 
 The old SwiftXR Shell localhost handoff is no longer part of Chromium's generic
 session-creation code. Presentation ownership/yielding belongs in the runtime
