@@ -1633,16 +1633,37 @@ void XRSystem::ActivateImmersiveMediaControl(int control_index) {
 }
 
 void XRSystem::ScheduleImmersiveMediaLayerResize(gfx::Size decoded_size) {
+  if (!immersive_media_session_ || !immersive_media_video_ ||
+      !immersive_media_video_->GetWebMediaPlayer() ||
+      immersive_media_resize_task_pending_ ||
+      immersive_media_pending_resize_layer_) {
+    return;
+  }
+
   const int64_t decoded_pixels =
       static_cast<int64_t>(decoded_size.width()) * decoded_size.height();
   const int64_t current_layer_pixels =
       static_cast<int64_t>(immersive_media_video_size_.width()) *
       immersive_media_video_size_.height();
-  if (decoded_size.IsEmpty() || decoded_pixels <= current_layer_pixels ||
-      decoded_size == immersive_media_failed_resize_size_ ||
-      !immersive_media_session_ || !immersive_media_video_ ||
-      immersive_media_resize_task_pending_ ||
-      immersive_media_pending_resize_layer_) {
+  const bool size_increased =
+      !decoded_size.IsEmpty() && decoded_pixels > current_layer_pixels;
+
+  ImmersiveMediaSpatialFormat current_format =
+      GetImmersiveMediaSpatialFormat(immersive_media_video_.Get());
+  const bool has_current_projection =
+      current_format.spatial_format.projection_type !=
+      media::VideoProjectionType::kNone;
+  const bool projection_changed =
+      has_current_projection &&
+      (current_format.spatial_format != immersive_media_spatial_format_ ||
+       current_format.needs_eac_reprojection !=
+           immersive_media_needs_eac_reprojection_);
+
+  if (!size_increased && !projection_changed) {
+    return;
+  }
+  if (size_increased && !projection_changed &&
+      decoded_size == immersive_media_failed_resize_size_) {
     return;
   }
 
@@ -1669,7 +1690,21 @@ void XRSystem::ApplyImmersiveMediaLayerResize() {
   const int64_t current_layer_pixels =
       static_cast<int64_t>(immersive_media_video_size_.width()) *
       immersive_media_video_size_.height();
-  if (decoded_size.IsEmpty() || decoded_pixels <= current_layer_pixels) {
+  const bool size_increased =
+      !decoded_size.IsEmpty() && decoded_pixels > current_layer_pixels;
+
+  ImmersiveMediaSpatialFormat current_format =
+      GetImmersiveMediaSpatialFormat(immersive_media_video_.Get());
+  const bool has_current_projection =
+      current_format.spatial_format.projection_type !=
+      media::VideoProjectionType::kNone;
+  const bool projection_changed =
+      has_current_projection &&
+      (current_format.spatial_format != immersive_media_spatial_format_ ||
+       current_format.needs_eac_reprojection !=
+           immersive_media_needs_eac_reprojection_);
+
+  if (!size_increased && !projection_changed) {
     return;
   }
 
