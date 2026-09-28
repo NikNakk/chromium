@@ -16,6 +16,7 @@
 #include "device/vr/openxr/exit_xr_present_reason.h"
 #include "device/vr/openxr/openxr_anchor_manager.h"
 #include "device/vr/openxr/openxr_depth_sensor.h"
+#include "device/vr/openxr/openxr_foveation.h"
 #include "device/vr/openxr/openxr_graphics_binding.h"
 #include "device/vr/openxr/openxr_light_estimator.h"
 #include "device/vr/openxr/openxr_mesh_manager.h"
@@ -112,6 +113,7 @@ class OpenXrApiWrapper {
   std::vector<mojom::XRViewPtr> GetViews() const;
   mojom::VRPosePtr GetViewerPose() const;
   std::vector<mojom::XRInputSourceStatePtr> GetInputState();
+  mojom::XRFoveationDataPtr GetFoveationData() const;
   void OnHideInputSources();
 
   std::vector<mojom::XRViewPtr> GetDefaultViews() const;
@@ -218,6 +220,7 @@ class OpenXrApiWrapper {
   mojom::XRRuntimeSessionOptionsPtr session_options_;
 
   std::unique_ptr<OpenXRInputHelper> input_helper_;
+  std::optional<OpenXrFoveationPolicy> foveation_policy_;
 
   // OpenXR objects
 
