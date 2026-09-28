@@ -259,6 +259,15 @@ class OpenXrGraphicsBinding {
       mojom::XRCompositionLayerDataPtr layer_data,
       gpu::SharedImageInterface* shared_image_interface);
 
+  // Ensure a client-created composition layer has a runtime swapchain and,
+  // where required by the graphics binding, renderer-visible SharedImages.
+  // Preparing before activation permits callers to switch layers
+  // transactionally without dropping the currently enabled layer first.
+  bool PrepareCompositionLayer(LayerId layer_id,
+                               XrSession session,
+                               uint32_t swapchain_sample_count,
+                               gpu::SharedImageInterface* sii);
+
   // End the export of updated layers; return layer ClientSharedImages and
   // output SyncTokens unpacked from XRLayerUpdates via the `out_sync_tokens`
   // parameter.
