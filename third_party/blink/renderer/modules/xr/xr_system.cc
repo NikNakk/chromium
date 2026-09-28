@@ -1203,6 +1203,7 @@ void XRSystem::EndImmersiveMediaSession(HTMLVideoElement* video) {
   }
 
   immersive_media_video_ = nullptr;
+  immersive_media_windowed_ = false;
 
   if (!immersive_media_session_) {
     // A request may still be in flight. Its completion callback will see that
@@ -1219,6 +1220,23 @@ void XRSystem::EndImmersiveMediaSession(HTMLVideoElement* video) {
 
   DVLOG(1) << "Ending internal immersive-media session";
   session->ForceEnd(XRSession::ShutdownPolicy::kWaitForResponse);
+}
+
+bool XRSystem::HandleImmersiveMediaEscape() {
+  if (!immersive_media_windowed_ || !immersive_media_session_ ||
+      !immersive_media_video_) {
+    return false;
+  }
+
+  DVLOG(1) << "Escape ending windowed immersive-media session";
+  EndImmersiveMediaSession(immersive_media_video_.Get());
+  return true;
+}
+
+bool XRSystem::ShouldKeepImmersiveMediaSessionOnFullscreenExit(
+    HTMLVideoElement* video) const {
+  return immersive_media_windowed_ && immersive_media_session_ &&
+         immersive_media_video_.Get() == video;
 }
 
 XREquirectLayer* XRSystem::CreateImmersiveMediaLayer(
@@ -1345,6 +1363,7 @@ void XRSystem::OnImmersiveMediaSessionReturned(
     DVLOG(1) << "Immersive-media session creation failed: "
                << GetConsoleMessage(result->get_failure_reason());
     immersive_media_video_ = nullptr;
+    immersive_media_windowed_ = false;
     return;
   }
 
@@ -1382,6 +1401,7 @@ void XRSystem::OnImmersiveMediaSessionReturned(
   if (!layer) {
     session->ForceEnd(XRSession::ShutdownPolicy::kWaitForResponse);
     immersive_media_video_ = nullptr;
+    immersive_media_windowed_ = false;
     return;
   }
 
@@ -1398,6 +1418,31 @@ void XRSystem::OnImmersiveMediaSessionReturned(
            << immersive_media_video_size_.ToString()
            << " texture=" << layer->textureWidth() << "x"
            << layer->textureHeight();
+
+#if BUILDFLAG(IS_MAC)
+  if (base::FeatureList::IsEnabled(
+          features::kImmersiveVideoKeepBrowserWindowed)) {
+    immersive_media_windowed_ = true;
+
+    Document* document = DomWindow() ? DomWindow()->document() : nullptr;
+    if (document && Fullscreen::FullscreenElementFrom(*document)) {
+      DVLOG(1) << "XR media layer established; leaving desktop fullscreen";
+      fullscreen_exit_observer_ =
+          MakeGarbageCollected<XrExitFullscreenObserver>();
+      fullscreen_exit_observer_->ExitFullscreen(
+          document,
+          BindOnce(&XRSystem::OnImmersiveMediaDesktopFullscreenExited,
+                   WrapWeakPersistent(this)));
+    }
+  }
+#endif  // BUILDFLAG(IS_MAC)
+}
+
+void XRSystem::OnImmersiveMediaDesktopFullscreenExited() {
+  fullscreen_exit_observer_ = nullptr;
+  if (immersive_media_session_ && immersive_media_windowed_) {
+    DVLOG(1) << "Immersive-media XR session remains active with browser windowed";
+  }
 }
 
 void XRSystem::RequestImmersiveSession(PendingRequestSessionQuery* query,
@@ -1819,6 +1864,7 @@ void XRSystem::OnSessionEnded(XRSession* session) {
     immersive_media_video_ = nullptr;
     immersive_media_video_size_ = gfx::Size();
     immersive_media_resize_task_pending_ = false;
+    immersive_media_windowed_ = false;
   }
 
   if (session->immersive()) {
