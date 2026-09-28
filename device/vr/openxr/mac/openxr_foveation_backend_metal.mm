@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <array>
 #include <map>
+#include <vector>
 
 namespace device {
 namespace {
@@ -23,8 +24,18 @@ uint32_t ZoneForCoordinate(float coordinate) {
 class OpenXrFoveationBackendMetal::Impl {
  public:
   explicit Impl(void* d) : device((__bridge id<MTLDevice>)d) {}
+
+  struct TargetEntry {
+    id<MTLRasterizationRateMap> __strong map = nil;
+    OpenXrFoveationTargetState state;
+    gfx::Size logical_size;
+    OpenXrFoveationPolicy policy;
+    std::vector<uint32_t> x_zones;
+    std::vector<uint32_t> y_zones;
+  };
+
   id<MTLDevice> __strong device = nil;
-  std::map<uint32_t, id<MTLRasterizationRateMap>> maps;
+  std::map<uint32_t, TargetEntry> targets;
 };
 
 OpenXrFoveationBackendMetal::OpenXrFoveationBackendMetal(void* device)
@@ -35,6 +46,19 @@ bool OpenXrFoveationBackendMetal::IsSupported() const {
   return impl_->device != nil &&
          [impl_->device supportsRasterizationRateMapWithLayerCount:1];
 }
+
+namespace {
+
+bool SamePolicy(const OpenXrFoveationPolicy& a,
+                const OpenXrFoveationPolicy& b) {
+  return a.level == b.level && a.center_rate == b.center_rate &&
+         a.middle_rate == b.middle_rate &&
+         a.peripheral_rate == b.peripheral_rate &&
+         a.center_half_extent == b.center_half_extent &&
+         a.middle_half_extent == b.middle_half_extent;
+}
+
+}  // namespace
 
 std::optional<OpenXrFoveationTargetState>
 OpenXrFoveationBackendMetal::ConfigureTarget(
@@ -47,11 +71,26 @@ OpenXrFoveationBackendMetal::ConfigureTarget(
 
   std::vector<float> center_x;
   std::vector<float> center_y;
+  std::vector<uint32_t> x_zones;
+  std::vector<uint32_t> y_zones;
   center_x.reserve(config.centers.size());
   center_y.reserve(config.centers.size());
+  x_zones.reserve(config.centers.size());
+  y_zones.reserve(config.centers.size());
   for (const gfx::PointF& center : config.centers) {
     center_x.push_back(center.x());
     center_y.push_back(center.y());
+    x_zones.push_back(ZoneForCoordinate(center.x()));
+    y_zones.push_back(ZoneForCoordinate(center.y()));
+  }
+
+  auto existing = impl_->targets.find(target_index);
+  if (existing != impl_->targets.end() &&
+      existing->second.logical_size == config.logical_size &&
+      SamePolicy(existing->second.policy, config.policy) &&
+      existing->second.x_zones == x_zones &&
+      existing->second.y_zones == y_zones) {
+    return existing->second.state;
   }
 
   std::array<float, kZoneCount> horizontal;
@@ -104,20 +143,27 @@ OpenXrFoveationBackendMetal::ConfigureTarget(
         static_cast<float>(py.y) / config.logical_size.height();
   }
 
-  impl_->maps[target_index] = map;
+  Impl::TargetEntry entry;
+  entry.map = map;
+  entry.state = state;
+  entry.logical_size = config.logical_size;
+  entry.policy = config.policy;
+  entry.x_zones = std::move(x_zones);
+  entry.y_zones = std::move(y_zones);
+  impl_->targets[target_index] = std::move(entry);
   return state;
 }
 
 void OpenXrFoveationBackendMetal::ResetTarget(uint32_t target_index) {
-  impl_->maps.erase(target_index);
+  impl_->targets.erase(target_index);
 }
 void OpenXrFoveationBackendMetal::Reset() {
-  impl_->maps.clear();
+  impl_->targets.clear();
 }
 void* OpenXrFoveationBackendMetal::GetRasterizationRateMap(
     uint32_t target_index) const {
-  auto it = impl_->maps.find(target_index);
-  return it == impl_->maps.end() ? nullptr : (__bridge void*)it->second;
+  auto it = impl_->targets.find(target_index);
+  return it == impl_->targets.end() ? nullptr : (__bridge void*)it->second.map;
 }
 
 }  // namespace device
