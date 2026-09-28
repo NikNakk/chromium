@@ -1161,16 +1161,16 @@ void XRSystem::RequestImmersiveMediaSession(
     return;
   }
 
-  immersive_media_spatial_format_ = spatial_format;
-  immersive_media_needs_eac_reprojection_ =
-      immersive_format.needs_eac_reprojection;
-
   if (immersive_media_request_pending_ || immersive_media_session_ ||
       has_outstanding_immersive_request_ ||
       frameProvider()->immersive_session()) {
     DVLOG(1) << "Immersive XR session already active or pending";
     return;
   }
+
+  immersive_media_spatial_format_ = spatial_format;
+  immersive_media_needs_eac_reprojection_ =
+      immersive_format.needs_eac_reprojection;
 
   TryEnsureService();
   if (!service_.is_bound()) {
@@ -1208,6 +1208,8 @@ void XRSystem::EndImmersiveMediaSession(HTMLVideoElement* video) {
 
   immersive_media_video_ = nullptr;
   immersive_media_windowed_ = false;
+  immersive_media_spatial_format_ = media::VideoSpatialFormat();
+  immersive_media_needs_eac_reprojection_ = false;
 
   if (!immersive_media_session_) {
     // A request may still be in flight. Its completion callback will see that
@@ -1220,8 +1222,6 @@ void XRSystem::EndImmersiveMediaSession(HTMLVideoElement* video) {
   immersive_media_space_ = nullptr;
   immersive_media_session_ = nullptr;
   immersive_media_video_size_ = gfx::Size();
-  immersive_media_spatial_format_ = media::VideoSpatialFormat();
-  immersive_media_needs_eac_reprojection_ = false;
   immersive_media_resize_task_pending_ = false;
 
   DVLOG(1) << "Ending internal immersive-media session";
