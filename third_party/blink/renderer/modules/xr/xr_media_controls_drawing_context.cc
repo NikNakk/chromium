@@ -19,7 +19,7 @@
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "third_party/skia/include/core/SkPaint.h"
-#include "third_party/skia/include/core/SkPath.h"
+#include "third_party/skia/include/core/SkPathBuilder.h"
 #include "third_party/skia/include/core/SkRect.h"
 
 namespace blink {
@@ -49,12 +49,12 @@ void DrawChevron(SkCanvas* canvas,
                  bool points_right,
                  SkPaint* paint) {
   const float sign = points_right ? 1.0f : -1.0f;
-  SkPath path;
+  SkPathBuilder path;
   path.moveTo(center_x - sign * size * 0.45f, center_y - size * 0.65f);
   path.lineTo(center_x + sign * size * 0.45f, center_y);
   path.lineTo(center_x - sign * size * 0.45f, center_y + size * 0.65f);
   path.close();
-  canvas->drawPath(path, *paint);
+  canvas->drawPath(path.detach(), *paint);
 }
 
 void DrawSkip(SkCanvas* canvas,
@@ -74,12 +74,12 @@ void DrawPlayPause(SkCanvas* canvas,
                    SkPaint* paint) {
   const float size = std::min(rect.width(), rect.height()) * 0.30f;
   if (paused) {
-    SkPath path;
+    SkPathBuilder path;
     path.moveTo(rect.centerX() - size * 0.55f, rect.centerY() - size);
     path.lineTo(rect.centerX() + size, rect.centerY());
     path.lineTo(rect.centerX() - size * 0.55f, rect.centerY() + size);
     path.close();
-    canvas->drawPath(path, *paint);
+    canvas->drawPath(path.detach(), *paint);
     return;
   }
 
@@ -107,7 +107,7 @@ void DrawMute(SkCanvas* canvas,
   const float cx = rect.centerX();
   const float cy = rect.centerY();
 
-  SkPath speaker;
+  SkPathBuilder speaker;
   speaker.moveTo(cx - size, cy - size * 0.35f);
   speaker.lineTo(cx - size * 0.45f, cy - size * 0.35f);
   speaker.lineTo(cx + size * 0.15f, cy - size);
@@ -115,7 +115,7 @@ void DrawMute(SkCanvas* canvas,
   speaker.lineTo(cx - size * 0.45f, cy + size * 0.35f);
   speaker.lineTo(cx - size, cy + size * 0.35f);
   speaker.close();
-  canvas->drawPath(speaker, *paint);
+  canvas->drawPath(speaker.detach(), *paint);
 
   if (muted) {
     paint->setStyle(SkPaint::kStroke_Style);
