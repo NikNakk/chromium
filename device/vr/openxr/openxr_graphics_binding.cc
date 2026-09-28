@@ -698,12 +698,23 @@ bool OpenXrGraphicsBinding::Render(
 
     auto layer_it = layers_.find(layer_id);
     DCHECK(layer_it != layers_.end());
+
+    // Explicit composition layers may intentionally be sparse. Once a
+    // swapchain image has been released, xrEndFrame can continue referencing
+    // that image while Blink leaves a newly acquired image untouched until the
+    // content actually changes. This is used by browser-owned immersive video
+    // and controls, and is also valid for any future sparse explicit layer.
+    if (layer_it->second->has_last_released_swapchain_image()) {
+      continue;
+    }
+
     if (layer_it->second->read_only_data().is_static &&
         layer_it->second->is_rendered()) {
       continue;
     }
 
-    DLOG(ERROR) << __func__ << ": Not all layers in render state are updated";
+    DLOG(ERROR) << __func__
+                << ": enabled layer has no update and no reusable image";
     break;
   }
 #endif
