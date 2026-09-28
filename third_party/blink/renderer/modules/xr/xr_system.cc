@@ -1373,9 +1373,15 @@ XREquirectLayer* XRSystem::CreateImmersiveMediaLayer(
 XRQuadLayer* XRSystem::CreateImmersiveMediaControlsLayer(
     XRSession* session,
     XRReferenceSpace* space) {
-  if (!session || !space || session->maxRenderLayers() < 2 ||
+  if (!session || !space ||
       !base::FeatureList::IsEnabled(
           features::kImmersiveVideoControlsViaOpenXr)) {
+    return nullptr;
+  }
+
+  if (session->maxRenderLayers() < 2) {
+    DVLOG(1) << "Immersive-media controls disabled: runtime max layers="
+             << session->maxRenderLayers();
     return nullptr;
   }
 
@@ -1395,6 +1401,10 @@ XRQuadLayer* XRSystem::CreateImmersiveMediaControlsLayer(
   layer->setOpacity(0.0f);
 
   immersive_media_controls_context_ = drawing_context;
+  DVLOG(1) << "Immersive-media controls layer created texture="
+           << drawing_context->TextureWidth() << "x"
+           << drawing_context->TextureHeight()
+           << " max_layers=" << session->maxRenderLayers();
   return layer;
 }
 
@@ -1516,6 +1526,7 @@ void XRSystem::ActivateImmersiveMediaControl(int control_index) {
     return;
   }
 
+  DVLOG(1) << "Immersive-media control activated index=" << control_index;
   switch (control_index) {
     case 0: {
       const double current_time = immersive_media_video_->currentTime();
