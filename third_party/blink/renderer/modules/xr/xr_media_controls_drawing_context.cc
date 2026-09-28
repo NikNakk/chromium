@@ -159,6 +159,23 @@ XRMediaControlsDrawingContext::XRMediaControlsDrawingContext(XRSession* session)
 
 XRMediaControlsDrawingContext::~XRMediaControlsDrawingContext() = default;
 
+int XRMediaControlsDrawingContext::HitTest(float normalized_x,
+                                           float normalized_y) {
+  if (normalized_x < 0.0f || normalized_x > 1.0f ||
+      normalized_y < 0.0f || normalized_y > 1.0f) {
+    return -1;
+  }
+
+  const float x = normalized_x * 1024.0f;
+  const float y = normalized_y * 192.0f;
+  for (int i = 0; i < kControlCount; ++i) {
+    if (ButtonRect(i, 1024.0f, 192.0f).contains(x, y)) {
+      return i;
+    }
+  }
+  return -1;
+}
+
 void XRMediaControlsDrawingContext::SetState(bool paused,
                                              bool muted,
                                              int hovered_control) {
