@@ -7,6 +7,7 @@
 
 #include <optional>
 
+#include "base/functional/callback.h"
 #include "device/vr/public/mojom/vr_service.mojom-blink.h"
 #include "third_party/blink/renderer/core/dom/events/event_target.h"
 
@@ -58,6 +59,7 @@ class XRLayer : public EventTarget {
   // Mojom backend.
   void CreateLayerBackend();
   bool IsBackendActive() const;
+  void SetBackendCreationCallback(base::OnceCallback<void(bool)> callback);
   void DestroyBackend();
 
   virtual XrLayerClient* LayerClient() = 0;
@@ -78,6 +80,8 @@ class XRLayer : public EventTarget {
   bool is_modified_{false};
 
   bool is_backend_active_{false};
+  bool backend_creation_complete_{false};
+  base::OnceCallback<void(bool)> backend_creation_callback_;
   bool needs_redraw_{false};
   bool should_dispatch_redraw_event_{false};
 };
