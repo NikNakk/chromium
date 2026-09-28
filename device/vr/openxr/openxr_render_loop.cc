@@ -1175,15 +1175,19 @@ void OpenXrRenderLoop::CreateCompositionLayer(
   }
 
   const LayerId layer_id = layer_data->read_only_data->layer_id;
+  const bool prepare_before_callback =
+      layer_data->read_only_data->needs_raster_access;
   gpu::SharedImageInterface* sii = context_provider_->SharedImageInterface();
   if (!graphics_binding_->CreateCompositionLayer(std::move(layer_data), sii)) {
     return;
   }
 
-  // Creation is only reported to Blink once the runtime swapchain and required
-  // SharedImages are actually ready. This lets callers keep an existing layer
-  // alive until its replacement is known to be drawable.
-  if (!graphics_binding_->PrepareCompositionLayer(
+  // Browser-owned raster-backed layers (immersive media and its controls) need
+  // a stronger creation contract: do not report them ready until the runtime
+  // swapchain and renderer-visible SharedImages exist. Ordinary WebXR layers
+  // keep their previous lazy allocation behaviour and are prepared on enable.
+  if (prepare_before_callback &&
+      !graphics_binding_->PrepareCompositionLayer(
           layer_id, openxr_->session(),
           openxr_->GetRecommendedSwapchainSampleCount(), sii)) {
     graphics_binding_->DestroyCompositionLayer(layer_id, sii);
