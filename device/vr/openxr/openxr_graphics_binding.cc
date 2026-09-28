@@ -71,7 +71,7 @@ bool OpenXrGraphicsBinding::ConfigureBaseLayerFoveation(
   config.centers.assign(target_centers.begin(), target_centers.end());
 
   auto state = foveation_backend_->ConfigureTarget(0, config);
-  if (!state || !state->mapping) {
+  if (!state || !state->mapping || !PublishBaseLayerFoveation(config)) {
     ClearBaseLayerFoveation();
     return false;
   }
@@ -81,11 +81,19 @@ bool OpenXrGraphicsBinding::ConfigureBaseLayerFoveation(
 }
 
 void OpenXrGraphicsBinding::ClearBaseLayerFoveation() {
+  ClearPublishedBaseLayerFoveation();
   current_base_foveation_mapping_.reset();
   if (foveation_backend_) {
     foveation_backend_->ResetTarget(0);
   }
 }
+
+bool OpenXrGraphicsBinding::PublishBaseLayerFoveation(
+    const OpenXrFoveationTargetConfig& config) {
+  return true;
+}
+
+void OpenXrGraphicsBinding::ClearPublishedBaseLayerFoveation() {}
 
 void OpenXrGraphicsBinding::OnSessionCreated(XrSpace local_space,
                                              bool is_webgpu) {
