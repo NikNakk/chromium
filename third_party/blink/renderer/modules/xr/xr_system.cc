@@ -1461,6 +1461,10 @@ XRQuadLayer* XRSystem::CreateImmersiveMediaControlsLayer(
   auto* layer = MakeGarbageCollected<XRQuadLayer>(
       session, init, V8XRLayerLayout::Enum::kMono, /*binding=*/nullptr,
       drawing_context);
+  layer->SetBackendCreationCallback(BindOnce([](bool active) {
+    DVLOG(1) << "Immersive-media controls backend active="
+             << (active ? "yes" : "no");
+  }));
   layer->setBlendTextureSourceAlpha(true);
   layer->setOpacity(0.0f);
 
