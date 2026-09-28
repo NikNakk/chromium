@@ -786,6 +786,70 @@ void OpenXrGraphicsBinding::DestroyCompositionLayer(
   layers_.erase(layer_it);
 }
 
+bool OpenXrGraphicsBinding::PrepareCompositionLayer(
+    LayerId layer_id,
+    XrSession session,
+    uint32_t swapchain_sample_count,
+    gpu::SharedImageInterface* sii) {
+  OpenXrCompositionLayer* layer = GetCompositionLayer(layer_id);
+  if (!layer) {
+    LOG(ERROR) << __func__ << ": unknown composition layer " << layer_id;
+    return false;
+  }
+
+#if BUILDFLAG(IS_MAC)
+  if (RequiresSharedImages() &&
+      layer->type() == OpenXrCompositionLayer::Type::kProjection) {
+    // The direct Metal path exposes this swapchain to Blink, so its dimensions
+    // must continue to match the immutable layer descriptor.
+    const gfx::Size layer_size(layer->read_only_data().texture_width,
+                               layer->read_only_data().texture_height);
+    if (layer->GetSwapchainImageSize() != layer_size) {
+      DVLOG(1) << __func__ << ": correcting macOS projection layer "
+               << layer_id << " swapchain size from "
+               << layer->GetSwapchainImageSize().ToString() << " to "
+               << layer_size.ToString();
+      if (layer->HasColorSwapchain()) {
+        layer->DestroySwapchain(sii);
+      }
+      last_rendered_layer_projection_views_.erase(layer_id);
+      layer->SetSwapchainImageSize(layer_size);
+    }
+  }
+#endif
+
+  if (!layer->HasColorSwapchain()) {
+    last_rendered_layer_projection_views_.erase(layer_id);
+    uint32_t layer_sample_count = swapchain_sample_count;
+#if BUILDFLAG(IS_MAC)
+    if (RequiresSharedImages()) {
+      // Direct Metal SharedImage import supports single-sample 2D textures.
+      layer_sample_count = 1;
+    }
+#endif
+    const XrResult result =
+        layer->CreateSwapchain(session, layer_sample_count);
+    if (XR_FAILED(result)) {
+      LOG(ERROR) << __func__
+                 << ": failed to create swapchain for composition layer "
+                 << layer_id << ", result=" << result;
+      return false;
+    }
+  }
+
+  if (RequiresSharedImages() && !layer->IsUsingSharedImages()) {
+    CreateSharedImages(*layer, sii);
+    if (!layer->IsUsingSharedImages()) {
+      LOG(ERROR) << __func__ << ": composition layer " << layer_id
+                 << " has no usable SharedImages after swapchain creation";
+      layer->DestroySwapchain(sii);
+      return false;
+    }
+  }
+
+  return true;
+}
+
 bool OpenXrGraphicsBinding::SetEnabledCompositionLayers(
     const std::vector<LayerId>& layer_ids,
     XrSession session,
@@ -793,76 +857,31 @@ bool OpenXrGraphicsBinding::SetEnabledCompositionLayers(
     gpu::SharedImageInterface* sii) {
   absl::flat_hash_set<LayerId> enabled_layers(layer_ids.begin(),
                                               layer_ids.end());
+
+  // Prepare every replacement layer before retiring anything that is currently
+  // enabled. This makes layer switches transactional: if a new swapchain cannot
+  // be created, the old layer remains intact and drawable.
   has_custom_projection_layer_ = false;
+  for (LayerId id : layer_ids) {
+    if (!PrepareCompositionLayer(id, session, swapchain_sample_count, sii)) {
+      return false;
+    }
+    OpenXrCompositionLayer* layer = GetCompositionLayer(id);
+    CHECK(layer);
+    if (layer->type() == OpenXrCompositionLayer::Type::kProjection) {
+      has_custom_projection_layer_ = true;
+    }
+  }
+
+  // Only after all requested layers are ready is it safe to retire swapchains
+  // belonging to layers no longer in the enabled sequence.
   for (auto& [id, layer] : layers_) {
-    if (enabled_layers.contains(id)) {
-#if BUILDFLAG(IS_MAC)
-      if (RequiresSharedImages() &&
-          layer->type() == OpenXrCompositionLayer::Type::kProjection) {
-        // WebXR projection layers may use a framebuffer scale factor that is
-        // different from the runtime's native/base projection size. The Metal
-        // shared-image path exposes this swapchain directly to Blink, so the
-        // OpenXR swapchain must match the layer descriptor exactly.
-        //
-        // Reassert this immediately before swapchain creation rather than only
-        // in CreateCompositionLayer(). Base-layer size/transfer updates can
-        // occur between layer creation and activation.
-        const gfx::Size layer_size(layer->read_only_data().texture_width,
-                                   layer->read_only_data().texture_height);
-        DVLOG(1) << __func__ << ": macOS projection layer " << id
-                 << " descriptor=" << layer_size.ToString()
-                 << " swapchain="
-                 << layer->GetSwapchainImageSize().ToString()
-                 << " has_swapchain=" << layer->HasColorSwapchain();
-        if (layer->GetSwapchainImageSize() != layer_size) {
-          DVLOG(1) << __func__ << ": correcting macOS projection layer "
-                       << id << " swapchain size from "
-                       << layer->GetSwapchainImageSize().ToString() << " to "
-                       << layer_size.ToString();
-          if (layer->HasColorSwapchain()) {
-            layer->DestroySwapchain(sii);
-          }
-          last_rendered_layer_projection_views_.erase(id);
-          layer->SetSwapchainImageSize(layer_size);
-        }
-      }
-#endif
-      if (!layer->HasColorSwapchain()) {
-        last_rendered_layer_projection_views_.erase(id);
-        uint32_t layer_sample_count = swapchain_sample_count;
-#if BUILDFLAG(IS_MAC)
-        // The direct Metal SharedImage import path only supports
-        // single-sample 2D textures. Match the base-layer policy here for
-        // explicit WebXR composition layers.
-        if (RequiresSharedImages()) {
-          layer_sample_count = 1;
-        }
-#endif
-        const XrResult result =
-            layer->CreateSwapchain(session, layer_sample_count);
-        if (XR_FAILED(result)) {
-          LOG(ERROR) << __func__
-                     << ": failed to create swapchain for composition layer "
-                     << id << ", result=" << result;
-          return false;
-        }
-        CreateSharedImages(*layer, sii);
-        if (RequiresSharedImages() && !layer->IsUsingSharedImages()) {
-          LOG(ERROR) << __func__
-                     << ": composition layer " << id
-                     << " has no usable SharedImages after swapchain creation";
-          layer->DestroySwapchain(sii);
-          return false;
-        }
-      }
-      if (layer->type() == OpenXrCompositionLayer::Type::kProjection) {
-        has_custom_projection_layer_ = true;
-      }
-    } else if (layer->HasColorSwapchain()) {
+    if (!enabled_layers.contains(id) && layer->HasColorSwapchain()) {
       layer->DestroySwapchain(sii);
       last_rendered_layer_projection_views_.erase(id);
     }
   }
+
   layers_sequence_ = layer_ids;
   return true;
 }
