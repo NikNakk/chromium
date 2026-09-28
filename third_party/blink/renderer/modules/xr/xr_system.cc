@@ -1360,15 +1360,33 @@ XREquirectLayer* XRSystem::CreateImmersiveMediaLayer(
     return nullptr;
   }
 
-  ImmersiveMediaSpatialFormat immersive_format;
-  if (video == immersive_media_video_.Get() &&
+  // Re-read the current decoder/container spatial metadata whenever we build
+  // (or rebuild) the immersive media layer. YouTube can switch representations
+  // after the XR session starts, and projection metadata can change with that
+  // representation (for example, a low-resolution equirect stream followed by
+  // an EAC-packed higher-resolution stream). Reusing only the session-start
+  // value makes EAC behaviour depend on the timing of the quality switch.
+  //
+  // Keep the cached active-session format only as a fallback for transient
+  // metadata gaps during representation changes.
+  ImmersiveMediaSpatialFormat immersive_format =
+      GetImmersiveMediaSpatialFormat(video);
+  if (immersive_format.spatial_format.projection_type ==
+          media::VideoProjectionType::kNone &&
+      video == immersive_media_video_.Get() &&
       immersive_media_spatial_format_.projection_type !=
           media::VideoProjectionType::kNone) {
     immersive_format.spatial_format = immersive_media_spatial_format_;
     immersive_format.needs_eac_reprojection =
         immersive_media_needs_eac_reprojection_;
-  } else {
-    immersive_format = GetImmersiveMediaSpatialFormat(video);
+  } else if (video == immersive_media_video_.Get() &&
+             immersive_format.spatial_format.projection_type !=
+                 media::VideoProjectionType::kNone) {
+    // Carry the latest representation's projection metadata forward so a
+    // subsequent transient gap can still rebuild the correct layer.
+    immersive_media_spatial_format_ = immersive_format.spatial_format;
+    immersive_media_needs_eac_reprojection_ =
+        immersive_format.needs_eac_reprojection;
   }
 
   const media::VideoSpatialFormat& spatial_format =
