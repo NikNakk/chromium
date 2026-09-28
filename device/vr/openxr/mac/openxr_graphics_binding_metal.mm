@@ -793,12 +793,6 @@ bool OpenXrGraphicsBindingMetal::RenderLayer(
   auto fallback =
       impl_->fallback_textures.find(swap_chain_info->metal_texture.get());
   if (fallback == impl_->fallback_textures.end()) {
-    if (layer.read_only_data().needs_eac_reprojection) {
-      LOG(ERROR) << "XRDBG EAC RenderLayer unexpectedly has no fallback "
-                 << "layer=" << layer.GetLayerId()
-                 << " active_texture="
-                 << swap_chain_info->metal_texture.get();
-    }
     // Direct IOSurface path: Blink/ANGLE rendered into the runtime's storage,
     // so there is nothing to copy.
     return true;
@@ -863,23 +857,6 @@ bool OpenXrGraphicsBindingMetal::RenderLayer(
              << " vertices=" << layer_data.mesh_vertex_count;
   } else if (layer.read_only_data().needs_eac_reprojection) {
     TRACE_EVENT_INSTANT("xr", "OpenXrMetalEacReprojection");
-    IOSurfaceRef source_surface = source_texture.iosurface;
-    IOSurfaceRef runtime_surface = runtime_texture.iosurface;
-    LOG(ERROR) << "XRDBG EAC RenderLayer begin layer=" << layer.GetLayerId()
-               << " source=" << source_texture.width << "x"
-               << source_texture.height
-               << " runtime=" << runtime_texture.width << "x"
-               << runtime_texture.height
-               << " source_tex=" << (__bridge void*)source_texture
-               << " runtime_tex=" << (__bridge void*)runtime_texture
-               << " source_surface="
-               << (source_surface ? IOSurfaceGetID(source_surface) : 0)
-               << " runtime_surface="
-               << (runtime_surface ? IOSurfaceGetID(runtime_surface) : 0)
-               << " runtime_storage="
-               << static_cast<uint64_t>(runtime_texture.storageMode)
-               << " runtime_usage="
-               << static_cast<uint64_t>(runtime_texture.usage);
     id<MTLRenderPipelineState> pipeline =
         impl_->EacPipeline(runtime_texture.pixelFormat);
     id<MTLSamplerState> sampler = impl_->ScaleSampler();
@@ -986,12 +963,6 @@ bool OpenXrGraphicsBindingMetal::RenderLayer(
     return false;
   }
 
-  if (layer.read_only_data().needs_eac_reprojection) {
-    LOG(ERROR) << "XRDBG EAC RenderLayer completed layer="
-               << layer.GetLayerId()
-               << " status=" << static_cast<uint64_t>(command_buffer.status);
-  }
-
   return true;
 }
 
@@ -1013,17 +984,6 @@ void OpenXrGraphicsBindingMetal::CreateSharedImages(
   if (runtime_size.IsEmpty() || transfer_size.IsEmpty()) {
     DLOG(ERROR) << __func__ << ": empty swapchain/transfer image size";
     return;
-  }
-
-  if (layer.read_only_data().needs_raster_access) {
-    LOG(ERROR) << "XRDBG media SharedImages layer=" << layer.GetLayerId()
-               << " runtime=" << runtime_size.ToString()
-               << " transfer=" << transfer_size.ToString()
-               << " eac=" << layer.read_only_data().needs_eac_reprojection
-               << " projection_bytes="
-               << layer.read_only_data().media_projection_data.size()
-               << " layout="
-               << static_cast<int>(layer.read_only_data().layout);
   }
 
   gpu::SharedImageUsageSet usage =
