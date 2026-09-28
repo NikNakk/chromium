@@ -2033,6 +2033,10 @@ void XRSession::UpdatePresentationFrameState(
   } else {
     UpdateWorldUnderstandingStateForFrame(timestamp, frame_data);
   }
+
+  if (internal_composition_layer_frame_pump_) {
+    xr_->UpdateImmersiveMediaControlsGaze();
+  }
 }
 
 ScriptPromise<IDLArray<V8XRImageTrackingScore>>
@@ -2610,6 +2614,16 @@ void XRSession::ProcessInputSourceEvents(
         input_sources_->GetWithSourceId(input_state->source_id);
     // The input source might not be in input_sources_ if it was created hidden.
     if (input_source) {
+      // UA-owned immersive media is not exposed to page script. Consume a
+      // completed primary select here to summon/activate the browser transport
+      // panel instead of dispatching a synthetic WebXR select event.
+      if (input_state->primary_input_clicked &&
+          xr_->HandleImmersiveMediaPrimaryAction()) {
+        if (ended_) {
+          break;
+        }
+        continue;
+      }
       input_source->UpdateButtonStates(input_state);
     }
   }
