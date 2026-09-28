@@ -227,6 +227,7 @@ void OpenXrRenderLoop::RequestSession(
   webxr_has_pose_ = false;
   presentation_receiver_.reset();
   frame_data_receiver_.reset();
+  is_ua_immersive_media_session_ = options->is_ua_immersive_media;
   request_session_callback_ =
       base::BindPostTask(main_thread_task_runner_, std::move(callback));
 
@@ -423,9 +424,16 @@ void OpenXrRenderLoop::StartRuntimeFinish(
   if (auto* depth = openxr_->GetDepthSensor(); depth) {
     session->device_config->depth_configuration = depth->GetDepthConfig();
   }
-  if (openxr_->IsFeatureEnabled(mojom::XRSessionFeature::LAYERS)) {
+  if (openxr_->IsFeatureEnabled(mojom::XRSessionFeature::LAYERS) ||
+      (is_ua_immersive_media_session_ && graphics_binding_->SupportsLayers())) {
     session->device_config->max_render_layers = openxr_->GetMaxRenderLayers();
   }
+  DVLOG(1) << "OpenXR session layer capacity: ua_immersive_media="
+           << is_ua_immersive_media_session_
+           << " webxr_layers="
+           << openxr_->IsFeatureEnabled(mojom::XRSessionFeature::LAYERS)
+           << " max_render_layers="
+           << session->device_config->max_render_layers;
 
   session->enviroment_blend_mode =
       openxr_->PickEnvironmentBlendModeForSession(options->mode);
@@ -918,6 +926,7 @@ void OpenXrRenderLoop::StopRuntime() {
     std::move(end_callback_).Run();
   }
   openxr_ = nullptr;
+  is_ua_immersive_media_session_ = false;
   // Need to destroy the graphics binding after the OpenXrApiWrapper, which
   // depends on it.
   graphics_binding_.reset();
@@ -1244,10 +1253,11 @@ void OpenXrRenderLoop::SetEnabledCompositionLayers(
   // Without the optional WebXR "layers" feature, exactly one explicit
   // composition layer is still legal. The feature only raises the simultaneous
   // layer limit to the runtime's advertised maximum.
+  const bool allow_multiple_layers =
+      openxr_->IsFeatureEnabled(mojom::XRSessionFeature::LAYERS) ||
+      is_ua_immersive_media_session_;
   const size_t max_enabled_layers =
-      openxr_->IsFeatureEnabled(mojom::XRSessionFeature::LAYERS)
-          ? openxr_->GetMaxRenderLayers()
-          : 1u;
+      allow_multiple_layers ? openxr_->GetMaxRenderLayers() : 1u;
   if (layer_ids.size() > max_enabled_layers) {
     layer_manager_receiver_.ReportBadMessage(
         "Tried to enable too many layers.");
