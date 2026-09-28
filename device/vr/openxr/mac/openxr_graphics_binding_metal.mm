@@ -20,7 +20,7 @@
 
 #include "base/check.h"
 #include "base/logging.h"
-#include "base/memory/scoped_policy.h"
+#include "base/memory/scoped_policy.h"\n#include "base/trace_event/trace_event.h"
 #include "components/viz/common/resources/shared_image_format.h"
 #include "device/vr/openxr/openxr_composition_layer.h"
 #include "device/vr/openxr/openxr_platform.h"
@@ -814,6 +814,7 @@ bool OpenXrGraphicsBindingMetal::RenderLayer(
   }
 
   if (!layer.read_only_data().media_projection_data.empty()) {
+    TRACE_EVENT_INSTANT("xr", "OpenXrMetalMediaMeshReprojection");
     MetalLayerData& layer_data = GetMetalLayerData(layer);
     id<MTLRenderPipelineState> pipeline =
         impl_->MeshPipeline(runtime_texture.pixelFormat);
@@ -854,6 +855,7 @@ bool OpenXrGraphicsBindingMetal::RenderLayer(
              << runtime_texture.width << "x" << runtime_texture.height
              << " vertices=" << layer_data.mesh_vertex_count;
   } else if (layer.read_only_data().needs_eac_reprojection) {
+    TRACE_EVENT_INSTANT("xr", "OpenXrMetalEacReprojection");
     id<MTLRenderPipelineState> pipeline =
         impl_->EacPipeline(runtime_texture.pixelFormat);
     id<MTLSamplerState> sampler = impl_->ScaleSampler();
@@ -891,6 +893,9 @@ bool OpenXrGraphicsBindingMetal::RenderLayer(
              << runtime_texture.width << "x" << runtime_texture.height;
   } else if (source_texture.width == runtime_texture.width &&
              source_texture.height == runtime_texture.height) {
+    if (layer.read_only_data().needs_raster_access) {
+      TRACE_EVENT_INSTANT("xr", "OpenXrMetalMediaBlit");
+    }
     id<MTLBlitCommandEncoder> blit = [command_buffer blitCommandEncoder];
     if (!blit) {
       DLOG(ERROR) << __func__ << ": failed to create Metal blit command";
@@ -909,6 +914,9 @@ bool OpenXrGraphicsBindingMetal::RenderLayer(
         destinationOrigin:MTLOriginMake(0, 0, 0)];
     [blit endEncoding];
   } else {
+    if (layer.read_only_data().needs_raster_access) {
+      TRACE_EVENT_INSTANT("xr", "OpenXrMetalMediaScale");
+    }
     id<MTLRenderPipelineState> pipeline =
         impl_->ScalePipeline(runtime_texture.pixelFormat);
     id<MTLSamplerState> sampler = impl_->ScaleSampler();
