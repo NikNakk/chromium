@@ -150,48 +150,27 @@ ImmersiveMediaSpatialFormat GetImmersiveMediaSpatialFormat(
     return result;
   }
 
-  // YouTube's spherical player can expose an EAC-packed decode while the media
-  // pipeline reports only generic equirect360 metadata. The spherical-control
-  // element is transient during fullscreen/player transitions, so do not make
-  // EAC detection depend on it when the media pipeline already tells us that
-  // this is a YouTube mono 360 stream with no authoritative projection mesh.
-  // A non-empty projection mesh remains authoritative and is handled by the
-  // mesh reprojection path.
-  const StringView host = video->GetDocument().Url().Host();
-  const bool is_youtube =
-      host == "www.youtube.com" || host == "youtube.com" ||
-      host == "m.youtube.com";
-  const bool youtube_spherical_control =
-      video->GetDocument().QuerySelector(
-          AtomicString(".ytp-webgl-spherical-control")) != nullptr;
-  const bool youtube_generic_360 =
-      is_youtube && result.spatial_format.projection_data.empty() &&
-      result.spatial_format.projection_type ==
-          media::VideoProjectionType::kEquirect360 &&
-      result.spatial_format.stereo_mode == media::VideoStereoMode::kMono;
-
-  if ((youtube_spherical_control || youtube_generic_360) &&
-      result.spatial_format.projection_data.empty() &&
-      (result.spatial_format.projection_type ==
-           media::VideoProjectionType::kNone ||
-       (result.spatial_format.projection_type ==
-            media::VideoProjectionType::kEquirect360 &&
-        result.spatial_format.stereo_mode == media::VideoStereoMode::kMono))) {
-    if (result.spatial_format.projection_type ==
-        media::VideoProjectionType::kNone) {
-      result.spatial_format.projection_type =
-          media::VideoProjectionType::kEquirect360;
-      result.spatial_format.stereo_mode = media::VideoStereoMode::kMono;
-    }
-    result.needs_eac_reprojection = true;
-    LOG(INFO) << "Immersive media: YouTube EAC reprojection selected "
-              << "spherical_control=" << youtube_spherical_control
-              << " format=" << result.spatial_format.ToString();
+  // Container/decoder spatial metadata is authoritative. In particular,
+  // kEquirect360 with no projection mesh means the decoded pixels are already
+  // equirectangular; do not reinterpret that as EAC merely because the page is
+  // YouTube or exposes spherical-player controls.
+  if (result.spatial_format.projection_type !=
+      media::VideoProjectionType::kNone) {
     return result;
   }
 
-  if (result.spatial_format.projection_type !=
-      media::VideoProjectionType::kNone) {
+  // Legacy YouTube fallback: only when the media pipeline exposes no spatial
+  // projection at all, use the spherical-player control as a narrow hint that
+  // this is an older EAC-packed 360 stream.
+  const bool youtube_spherical_control =
+      video->GetDocument().QuerySelector(
+          AtomicString(".ytp-webgl-spherical-control")) != nullptr;
+  if (youtube_spherical_control) {
+    result.spatial_format.projection_type =
+        media::VideoProjectionType::kEquirect360;
+    result.spatial_format.stereo_mode = media::VideoStereoMode::kMono;
+    result.needs_eac_reprojection = true;
+    LOG(INFO) << "Immersive media: legacy YouTube EAC fallback selected";
     return result;
   }
 
