@@ -4,6 +4,7 @@
 
 #include "device/vr/openxr/openxr_graphics_binding.h"
 
+#include "base/logging.h"
 #include "build/build_config.h"
 #include "components/viz/common/gpu/context_provider.h"
 #include "device/vr/openxr/openxr_api_wrapper.h"
