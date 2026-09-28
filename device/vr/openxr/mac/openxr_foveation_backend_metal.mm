@@ -36,20 +36,28 @@ bool OpenXrFoveationBackendMetal::IsSupported() const {
          [impl_->device supportsRasterizationRateMapWithLayerCount:1];
 }
 
-std::optional<OpenXrFoveationViewState>
-OpenXrFoveationBackendMetal::ConfigureView(
-    uint32_t view_index,
-    const OpenXrFoveationViewConfig& config) {
-  if (!IsSupported() || config.logical_size.IsEmpty()) {
+std::optional<OpenXrFoveationTargetState>
+OpenXrFoveationBackendMetal::ConfigureTarget(
+    uint32_t target_index,
+    const OpenXrFoveationTargetConfig& config) {
+  if (!IsSupported() || config.logical_size.IsEmpty() ||
+      config.centers.empty()) {
     return std::nullopt;
+  }
+
+  std::vector<float> center_x;
+  std::vector<float> center_y;
+  center_x.reserve(config.centers.size());
+  center_y.reserve(config.centers.size());
+  for (const gfx::PointF& center : config.centers) {
+    center_x.push_back(center.x());
+    center_y.push_back(center.y());
   }
 
   std::array<float, kZoneCount> horizontal;
   std::array<float, kZoneCount> vertical;
-  if (!BuildOpenXrFoveationAxisRates(
-          config.policy, ZoneForCoordinate(config.center.x()), horizontal) ||
-      !BuildOpenXrFoveationAxisRates(
-          config.policy, ZoneForCoordinate(config.center.y()), vertical)) {
+  if (!BuildOpenXrFoveationAxisRates(config.policy, center_x, horizontal) ||
+      !BuildOpenXrFoveationAxisRates(config.policy, center_y, vertical)) {
     return std::nullopt;
   }
 
@@ -75,7 +83,7 @@ OpenXrFoveationBackendMetal::ConfigureView(
     return std::nullopt;
   }
 
-  OpenXrFoveationViewState state;
+  OpenXrFoveationTargetState state;
   state.physical_size = gfx::Size(static_cast<int>(physical.width),
                                   static_cast<int>(physical.height));
   state.mapping.emplace();
@@ -96,19 +104,19 @@ OpenXrFoveationBackendMetal::ConfigureView(
         static_cast<float>(py.y) / config.logical_size.height();
   }
 
-  impl_->maps[view_index] = map;
+  impl_->maps[target_index] = map;
   return state;
 }
 
-void OpenXrFoveationBackendMetal::ResetView(uint32_t view_index) {
-  impl_->maps.erase(view_index);
+void OpenXrFoveationBackendMetal::ResetTarget(uint32_t target_index) {
+  impl_->maps.erase(target_index);
 }
 void OpenXrFoveationBackendMetal::Reset() {
   impl_->maps.clear();
 }
 void* OpenXrFoveationBackendMetal::GetRasterizationRateMap(
-    uint32_t view_index) const {
-  auto it = impl_->maps.find(view_index);
+    uint32_t target_index) const {
+  auto it = impl_->maps.find(target_index);
   return it == impl_->maps.end() ? nullptr : (__bridge void*)it->second;
 }
 
