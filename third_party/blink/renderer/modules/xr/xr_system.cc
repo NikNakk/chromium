@@ -1446,9 +1446,9 @@ void XRSystem::OnImmersiveMediaSessionReturned(
     Document* document = DomWindow() ? DomWindow()->document() : nullptr;
     if (document && Fullscreen::FullscreenElementFrom(*document)) {
       DVLOG(1) << "XR media layer established; leaving desktop fullscreen";
-      fullscreen_exit_observer_ =
+      immersive_media_fullscreen_exit_observer_ =
           MakeGarbageCollected<XrExitFullscreenObserver>();
-      fullscreen_exit_observer_->ExitFullscreen(
+      immersive_media_fullscreen_exit_observer_->ExitFullscreen(
           document,
           BindOnce(&XRSystem::OnImmersiveMediaDesktopFullscreenExited,
                    WrapWeakPersistent(this)));
@@ -1458,7 +1458,7 @@ void XRSystem::OnImmersiveMediaSessionReturned(
 }
 
 void XRSystem::OnImmersiveMediaDesktopFullscreenExited() {
-  fullscreen_exit_observer_ = nullptr;
+  immersive_media_fullscreen_exit_observer_ = nullptr;
   if (immersive_media_session_ && immersive_media_windowed_) {
     DVLOG(1) << "Immersive-media XR session remains active with browser windowed";
   }
@@ -2263,6 +2263,7 @@ void XRSystem::Trace(Visitor* visitor) const {
   visitor->Trace(outstanding_request_queries_);
   visitor->Trace(fullscreen_enter_observer_);
   visitor->Trace(fullscreen_exit_observer_);
+  visitor->Trace(immersive_media_fullscreen_exit_observer_);
   Supplement<Navigator>::Trace(visitor);
   ExecutionContextLifecycleObserver::Trace(visitor);
   EventTarget::Trace(visitor);
