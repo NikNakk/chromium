@@ -878,8 +878,8 @@ bool OpenXrGraphicsBindingMetal::RenderLayer(
                << (runtime_surface ? IOSurfaceGetID(runtime_surface) : 0)
                << " runtime_storage="
                << static_cast<uint64_t>(runtime_texture.storageMode)
-               << " runtime_usage=0x" << std::hex
-               << static_cast<uint64_t>(runtime_texture.usage) << std::dec;
+               << " runtime_usage="
+               << static_cast<uint64_t>(runtime_texture.usage);
     id<MTLRenderPipelineState> pipeline =
         impl_->EacPipeline(runtime_texture.pixelFormat);
     id<MTLSamplerState> sampler = impl_->ScaleSampler();
