@@ -69,6 +69,11 @@ struct XRRuntimeSessionOptions {
 
   // ID of this request, used for tracing.
   uint64 trace_id;
+
+  // Browser-validated Chromium-owned immersive media session. This is set only
+  // by the browser process after validating the fullscreen media source; it is
+  // not copied directly from a renderer-provided request bit.
+  bool is_ua_immersive_media;
 };
 
 // Used to contain all data from the session created by the runtime, and meant
