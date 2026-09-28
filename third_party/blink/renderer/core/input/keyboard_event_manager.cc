@@ -22,6 +22,7 @@
 #include "third_party/blink/renderer/core/events/keyboard_event.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
+#include "third_party/blink/renderer/core/frame/picture_in_picture_controller.h"
 #include "third_party/blink/renderer/core/frame/settings.h"
 #include "third_party/blink/renderer/core/html/forms/html_input_element.h"
 #include "third_party/blink/renderer/core/html/html_dialog_element.h"
@@ -246,6 +247,26 @@ WebInputEventResult KeyboardEventManager::KeyEvent(
   Node* node = EventTargetNodeForDocument(frame_->GetDocument());
   if (!node)
     return WebInputEventResult::kNotHandled;
+
+  // Windowed browser-owned immersive video uses Escape as a UA control. Handle
+  // it before DOM dispatch so page JavaScript cannot swallow the exit gesture.
+  // Suppress the rest of the same physical Escape key sequence as well.
+  if (initial_key_event.dom_key == ui::DomKey::ESCAPE) {
+    const WebInputEvent::Type type = initial_key_event.GetType();
+    if (type == WebInputEvent::Type::kKeyDown ||
+        type == WebInputEvent::Type::kRawKeyDown) {
+      if (immersive_media_escape_key_active_ ||
+          PictureInPictureController::From(*frame_->GetDocument())
+              .HandleImmersivePictureInPictureEscape()) {
+        immersive_media_escape_key_active_ = true;
+        return WebInputEventResult::kHandledSuppressed;
+      }
+    } else if (type == WebInputEvent::Type::kKeyUp &&
+               immersive_media_escape_key_active_) {
+      immersive_media_escape_key_active_ = false;
+      return WebInputEventResult::kHandledSuppressed;
+    }
+  }
 
   // To be meaningful enough to indicate user intention, a keyboard event needs
   // - not to be a modifier event
