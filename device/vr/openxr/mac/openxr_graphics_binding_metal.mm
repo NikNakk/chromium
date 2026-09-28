@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#import <Foundation/Foundation.h>
+#import <IOSurface/IOSurface.h>
 #import <Metal/Metal.h>
 
 #include "device/vr/openxr/mac/openxr_graphics_binding_metal.h"
@@ -38,6 +40,10 @@
 namespace device {
 
 namespace {
+
+constexpr char kFoveationMetadataKey[] =
+    "org.chromium.openxr.metal-foveation-v1";
+constexpr uint32_t kFoveationMetadataZoneCount = 16;
 
 constexpr MTLPixelFormat kSupportedFormats[] = {
     MTLPixelFormatBGRA8Unorm_sRGB,
@@ -1123,6 +1129,113 @@ void OpenXrGraphicsBindingMetal::CreateSharedImages(
               << " runtime_iosurface=" << (texture.iosurface != nullptr)
               << " srgb=" << is_srgb;
   }
+}
+
+bool OpenXrGraphicsBindingMetal::PublishBaseLayerFoveation(
+    const OpenXrFoveationTargetConfig& config) {
+  if (!base_layer_ || config.logical_size.IsEmpty() ||
+      config.centers.empty()) {
+    return false;
+  }
+
+  OpenXrSwapchainInfo* swapchain_info =
+      base_layer_->GetActiveSwapchainImage();
+  if (!swapchain_info || !swapchain_info->metal_texture) {
+    return false;
+  }
+
+  id<MTLTexture> render_texture = nil;
+  auto fallback =
+      impl_->fallback_textures.find(swapchain_info->metal_texture.get());
+  if (fallback != impl_->fallback_textures.end()) {
+    render_texture = fallback->second;
+  } else {
+    render_texture =
+        (__bridge id<MTLTexture>)swapchain_info->metal_texture.get();
+  }
+
+  IOSurfaceRef surface = render_texture ? render_texture.iosurface : nullptr;
+  if (!surface) {
+    DLOG(WARNING) << __func__
+                  << ": active WebXR render texture is not IOSurface-backed";
+    return false;
+  }
+
+  std::vector<float> horizontal_centers;
+  std::vector<float> vertical_centers;
+  horizontal_centers.reserve(config.centers.size());
+  vertical_centers.reserve(config.centers.size());
+  for (const gfx::PointF& center : config.centers) {
+    horizontal_centers.push_back(center.x());
+    vertical_centers.push_back(center.y());
+  }
+
+  std::array<float, kFoveationMetadataZoneCount> horizontal_rates;
+  std::array<float, kFoveationMetadataZoneCount> vertical_rates;
+  if (!BuildOpenXrFoveationAxisRates(config.policy, horizontal_centers,
+                                      horizontal_rates) ||
+      !BuildOpenXrFoveationAxisRates(config.policy, vertical_centers,
+                                      vertical_rates)) {
+    return false;
+  }
+
+  NSMutableArray<NSNumber*>* horizontal =
+      [NSMutableArray arrayWithCapacity:kFoveationMetadataZoneCount];
+  NSMutableArray<NSNumber*>* vertical =
+      [NSMutableArray arrayWithCapacity:kFoveationMetadataZoneCount];
+  for (uint32_t i = 0; i < kFoveationMetadataZoneCount; ++i) {
+    [horizontal addObject:@(horizontal_rates[i])];
+    [vertical addObject:@(vertical_rates[i])];
+  }
+
+  NSDictionary* metadata = @{
+    @"version" : @1,
+    @"logical_width" : @(config.logical_size.width()),
+    @"logical_height" : @(config.logical_size.height()),
+    @"zone_count" : @(kFoveationMetadataZoneCount),
+    @"horizontal" : horizontal,
+    @"vertical" : vertical,
+  };
+  NSString* key = [NSString stringWithUTF8String:kFoveationMetadataKey];
+  IOSurfaceSetValue(surface, (__bridge CFStringRef)key,
+                    (__bridge CFTypeRef)metadata);
+
+  DVLOG(3) << __func__ << ": published "
+           << kFoveationMetadataZoneCount << "x"
+           << kFoveationMetadataZoneCount
+           << " WebXR foveation metadata for "
+           << config.logical_size.ToString();
+  return true;
+}
+
+void OpenXrGraphicsBindingMetal::ClearPublishedBaseLayerFoveation() {
+  if (!base_layer_) {
+    return;
+  }
+
+  OpenXrSwapchainInfo* swapchain_info =
+      base_layer_->GetActiveSwapchainImage();
+  if (!swapchain_info || !swapchain_info->metal_texture) {
+    return;
+  }
+
+  id<MTLTexture> render_texture = nil;
+  auto fallback =
+      impl_->fallback_textures.find(swapchain_info->metal_texture.get());
+  if (fallback != impl_->fallback_textures.end()) {
+    render_texture = fallback->second;
+  } else {
+    render_texture =
+        (__bridge id<MTLTexture>)swapchain_info->metal_texture.get();
+  }
+
+  IOSurfaceRef surface = render_texture ? render_texture.iosurface : nullptr;
+  if (!surface) {
+    return;
+  }
+
+  NSString* key = [NSString stringWithUTF8String:kFoveationMetadataKey];
+  IOSurfaceRemoveValue(surface, (__bridge CFStringRef)key);
 }
 
 bool OpenXrGraphicsBindingMetal::ShouldFlipSubmittedImage(
