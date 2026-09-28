@@ -711,8 +711,14 @@ XrResult OpenXrApiWrapper::InitSession(
                             device::mojom::XRSessionFeature::HAND_INPUT);
 
   RETURN_IF_XR_FAILED(OpenXRInputHelper::CreateOpenXRInputHelper(
-      instance_, system_properties.systemName, extension_helper, session_,
-      local_space_, enable_hand_tracking, &input_helper_));
+      instance_, system_, system_properties.systemName, extension_helper,
+      session_, local_space_, enable_hand_tracking, &input_helper_));
+
+  // Keep policy selection above the graphics backend. "Aggressive" is the
+  // currently validated 1.0/0.5/0.25 profile; backends only translate it into
+  // their native variable-rate mechanism.
+  foveation_policy_ = extension_helper.GetFoveationPolicy(
+      instance_, system_, OpenXrFoveationLevel::kAggressive);
 
   // Make sure all of the objects we initialized are there.
   DCHECK(HasSession());
@@ -1493,6 +1499,62 @@ mojom::VRPosePtr OpenXrApiWrapper::GetViewerPose() const {
 
 std::vector<mojom::XRInputSourceStatePtr> OpenXrApiWrapper::GetInputState() {
   return input_helper_->GetInputState(GetPredictedDisplayTime());
+}
+
+mojom::XRFoveationDataPtr OpenXrApiWrapper::GetFoveationData() const {
+  if (!foveation_policy_ || !input_helper_ || !HasFrameState() ||
+      primary_view_config_.Views().empty()) {
+    return nullptr;
+  }
+
+  const std::optional<XrPosef> gaze_pose = input_helper_->GetEyeGazePose(
+      view_space_, frame_state_.predictedDisplayTime);
+  if (!gaze_pose) {
+    return nullptr;
+  }
+
+  gfx::Vector3dF direction(0.0f, 0.0f, -1.0f);
+  gfx::Transform gaze_rotation(gfx::Quaternion(
+      gaze_pose->orientation.x, gaze_pose->orientation.y,
+      gaze_pose->orientation.z, gaze_pose->orientation.w));
+  gaze_rotation.TransformVector(&direction);
+
+  const float horizontal_length =
+      std::sqrt(direction.x() * direction.x() +
+                direction.z() * direction.z());
+  if (horizontal_length <= 1e-6f || direction.z() >= -1e-6f) {
+    return nullptr;
+  }
+
+  const float tangent_x = direction.x() / -direction.z();
+  const float tangent_y = direction.y() / horizontal_length;
+
+  auto data = mojom::XRFoveationData::New();
+  data->policy = mojom::XRFoveationPolicyData::New();
+  data->policy->center_rate = foveation_policy_->center_rate;
+  data->policy->middle_rate = foveation_policy_->middle_rate;
+  data->policy->peripheral_rate = foveation_policy_->peripheral_rate;
+  data->policy->center_half_extent = foveation_policy_->center_half_extent;
+  data->policy->middle_half_extent = foveation_policy_->middle_half_extent;
+
+  for (const XrView& view : primary_view_config_.Views()) {
+    const float left = std::tan(view.fov.angleLeft);
+    const float right = std::tan(view.fov.angleRight);
+    const float down = std::tan(view.fov.angleDown);
+    const float up = std::tan(view.fov.angleUp);
+    if (!(right > left) || !(up > down)) {
+      return nullptr;
+    }
+
+    auto view_data = mojom::XRFoveationViewData::New();
+    view_data->center_x =
+        std::clamp((tangent_x - left) / (right - left), 0.0f, 1.0f);
+    view_data->center_y =
+        std::clamp(1.0f - (tangent_y - down) / (up - down), 0.0f, 1.0f);
+    data->views.push_back(std::move(view_data));
+  }
+
+  return data;
 }
 
 void OpenXrApiWrapper::OnHideInputSources() {
