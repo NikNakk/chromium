@@ -1250,9 +1250,10 @@ void OpenXrRenderLoop::SetEnabledCompositionLayers(
     return;
   }
 
-  // Without the optional WebXR "layers" feature, exactly one explicit
-  // composition layer is still legal. The feature only raises the simultaneous
-  // layer limit to the runtime's advertised maximum.
+  // Ordinary WebXR needs the optional "layers" feature for multiple
+  // simultaneous explicit layers. A browser-validated UA immersive-media
+  // session may use the runtime's native layer capacity for browser UI without
+  // exposing that capability to page script.
   const bool allow_multiple_layers =
       openxr_->IsFeatureEnabled(mojom::XRSessionFeature::LAYERS) ||
       is_ua_immersive_media_session_;
