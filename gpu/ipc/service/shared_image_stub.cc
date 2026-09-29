@@ -86,9 +86,9 @@ SharedImageStub::shared_image_interface() {
 void SharedImageStub::WaitForMetalSharedEvents(
     const std::vector<Mailbox>& mailboxes,
     int32_t frame_index,
-    base::OnceClosure callback) {
+    base::OnceCallback<void(bool)> callback) {
   if (!factory_) {
-    std::move(callback).Run();
+    std::move(callback).Run(false);
     return;
   }
 

@@ -689,7 +689,7 @@ void GpuChannelMessageFilter::SignalSyncTokenAndWaitForMetalSharedEvents(
   auto it = route_sequences_.find(routing_id);
   if (it == route_sequences_.end()) {
     DVLOG(1) << "Could not find SharedImageInterface route id for Metal wait";
-    std::move(callback).Run();
+    std::move(callback).Run(false);
     return;
   }
 
@@ -712,11 +712,12 @@ void GpuChannelMessageFilter::SignalSyncTokenAndWaitForMetalSharedEvents(
             mailboxes, frame_index,
             base::BindOnce(
                 [](base::WeakPtr<gpu::GpuChannel> channel,
-                   SignalSyncTokenAndWaitForMetalSharedEventsCallback callback) {
+                   SignalSyncTokenAndWaitForMetalSharedEventsCallback callback,
+                   bool metal_events_complete) {
                   if (!channel) {
                     return;
                   }
-                  std::move(callback).Run();
+                  std::move(callback).Run(metal_events_complete);
                 },
                 channel, std::move(callback)));
       },

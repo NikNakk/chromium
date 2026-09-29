@@ -379,7 +379,7 @@ void ClientSharedImageInterface::SignalSyncTokenAndWaitForMetalSharedEvents(
     std::vector<SyncToken> sync_tokens,
     std::vector<Mailbox> mailboxes,
     int32_t frame_index,
-    base::OnceClosure callback) {
+    base::OnceCallback<void(bool)> callback) {
   gpu_channel_->SignalSyncTokenAndWaitForMetalSharedEvents(
       std::move(sync_tokens), std::move(mailboxes), frame_index,
       std::move(callback));

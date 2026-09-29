@@ -281,7 +281,7 @@ void GpuChannelHost::SignalSyncTokenAndWaitForMetalSharedEvents(
     std::vector<SyncToken> sync_tokens,
     std::vector<Mailbox> mailboxes,
     int32_t frame_index,
-    base::OnceClosure callback) {
+    base::OnceCallback<void(bool)> callback) {
   AutoLock lock(deferred_message_lock_);
   InternalFlush(UINT32_MAX);
   GetGpuChannel().SignalSyncTokenAndWaitForMetalSharedEvents(

@@ -284,7 +284,8 @@ class OpenXrRenderLoop : public XRThread,
 
 #if BUILDFLAG(IS_MAC)
   void OnWebXrSyncTokensSignaled(int16_t frame_index,
-                                 std::vector<LayerId> updated_layers);
+                                 std::vector<LayerId> updated_layers,
+                                 bool metal_events_complete);
 #endif
 
   void MaybeRejectSessionCallback();

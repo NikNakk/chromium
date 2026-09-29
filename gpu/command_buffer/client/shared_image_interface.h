@@ -339,7 +339,7 @@ class GPU_COMMAND_BUFFER_CLIENT_EXPORT SharedImageInterface
       std::vector<SyncToken> sync_tokens,
       std::vector<Mailbox> mailboxes,
       int32_t frame_index,
-      base::OnceClosure callback);
+      base::OnceCallback<void(bool)> callback);
 #endif
 
   // Informs that existing |mailbox| with the specified metadata can be passed

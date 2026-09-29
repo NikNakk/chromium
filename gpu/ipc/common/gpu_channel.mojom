@@ -221,10 +221,12 @@ interface GpuChannel {
 
   // macOS WebXR: after the SyncTokens are satisfied, wait for the Metal
   // shared-event fences recorded by the IOSurface SharedImage backings.
+  // |success| is false if the bounded Metal wait times out; callers must not
+  // present or recycle the affected swapchain image in that case.
   [EnableIf=is_mac]
   SignalSyncTokenAndWaitForMetalSharedEvents(
       array<SyncToken> sync_tokens, array<Mailbox> mailboxes,
-      int32 frame_index) => ();
+      int32 frame_index) => (bool success);
 };
 
 // Interface used to issue commands to a specific CommandBuffer instance in the

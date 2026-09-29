@@ -1049,9 +1049,32 @@ void OpenXrRenderLoop::SubmitFrameDrawnIntoTexture(
 #if BUILDFLAG(IS_MAC)
 void OpenXrRenderLoop::OnWebXrSyncTokensSignaled(
     int16_t frame_index,
-    std::vector<LayerId> updated_layers) {
+    std::vector<LayerId> updated_layers,
+    bool metal_events_complete) {
   TRACE_EVENT_END("xr", perfetto::Track(frame_index));
   if (!is_presenting_ || !openxr_ || !context_provider_) {
+    return;
+  }
+
+  if (!metal_events_complete) {
+    const bool matches_pending =
+        pending_frame_ && pending_frame_->render_info_->frame_id == frame_index;
+    if (!matches_pending) {
+      return;
+    }
+
+    // EndExport() has already transferred renderer ownership back to the
+    // browser/GPU path, but the Metal shared event did not prove that writes
+    // finished. Do not mark the swapchain image rendered, do not call
+    // xrEndFrame for this pending frame, and do not recycle the image into a
+    // subsequent renderer frame. Treat this as a fatal transport failure.
+    if (submit_client_) {
+      submit_client_->OnSubmitFrameTransferred(false, {});
+      submit_client_->OnSubmitFrameRendered();
+    }
+    TRACE_EVENT_INSTANT("xr", "OpenXRMetalSharedEventFrameDropped",
+                        "frame_index", frame_index);
+    ExitPresent(ExitXrPresentReason::kMetalSharedEventTimeout);
     return;
   }
 

@@ -43,7 +43,7 @@ class MetalSharedEventWaitState
  public:
   MetalSharedEventWaitState(size_t fence_count,
                             int32_t frame_index,
-                            base::OnceClosure callback)
+                            base::OnceCallback<void(bool)> callback)
       : origin_task_runner_(base::SequencedTaskRunner::GetCurrentDefault()),
         remaining_(fence_count),
         frame_index_(frame_index),
@@ -112,7 +112,7 @@ class MetalSharedEventWaitState
     }
 
     if (callback_) {
-      std::move(callback_).Run();
+      std::move(callback_).Run(event_fired);
     }
   }
 
@@ -121,7 +121,7 @@ class MetalSharedEventWaitState
   size_t remaining_ GUARDED_BY(lock_);
   bool done_ GUARDED_BY(lock_) = false;
   const int32_t frame_index_;
-  base::OnceClosure callback_;
+  base::OnceCallback<void(bool)> callback_;
 };
 
 }  // namespace
@@ -129,12 +129,12 @@ class MetalSharedEventWaitState
 void WaitForMetalSharedEventFences(
     std::vector<gfx::MTLSharedEventFence> fences,
     int32_t frame_index,
-    base::OnceClosure callback) {
+    base::OnceCallback<void(bool)> callback) {
   fences = gfx::MTLSharedEventFence::Reduce(std::move(fences));
   if (fences.empty()) {
     DVLOG(2) << __func__ << ": no Metal shared-event fences for frame "
              << frame_index;
-    std::move(callback).Run();
+    std::move(callback).Run(true);
     return;
   }
 

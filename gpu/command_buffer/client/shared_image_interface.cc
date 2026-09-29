@@ -4,6 +4,8 @@
 
 #include "gpu/command_buffer/client/shared_image_interface.h"
 
+#include "base/functional/bind.h"
+
 #include <GLES2/gl2.h>
 
 #include "base/functional/callback_helpers.h"
@@ -188,9 +190,11 @@ void SharedImageInterface::SignalSyncTokenAndWaitForMetalSharedEvents(
     std::vector<SyncToken> sync_tokens,
     std::vector<Mailbox> /*mailboxes*/,
     int32_t /*frame_index*/,
-    base::OnceClosure callback) {
-  // Non-GPU-backed/test implementations keep the old semantics.
-  SignalSyncToken(std::move(sync_tokens), std::move(callback));
+    base::OnceCallback<void(bool)> callback) {
+  // Non-GPU-backed/test implementations have no Metal event to wait for. A
+  // successfully signaled SyncToken is therefore a successful completion.
+  SignalSyncToken(std::move(sync_tokens),
+                  base::BindOnce(std::move(callback), true));
 }
 #endif
 

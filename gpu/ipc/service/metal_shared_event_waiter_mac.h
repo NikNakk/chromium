@@ -19,7 +19,7 @@ namespace gpu {
 void WaitForMetalSharedEventFences(
     std::vector<gfx::MTLSharedEventFence> fences,
     int32_t frame_index,
-    base::OnceClosure callback);
+    base::OnceCallback<void(bool)> callback);
 
 }  // namespace gpu
 

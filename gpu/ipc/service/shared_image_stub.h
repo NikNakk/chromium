@@ -66,7 +66,7 @@ class GPU_IPC_SERVICE_EXPORT SharedImageStub {
   // associated with the IOSurface SharedImages identified by |mailboxes|.
   void WaitForMetalSharedEvents(const std::vector<Mailbox>& mailboxes,
                                 int32_t frame_index,
-                                base::OnceClosure callback);
+                                base::OnceCallback<void(bool)> callback);
 #endif
 
 #if BUILDFLAG(IS_WIN)

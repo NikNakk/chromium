@@ -225,7 +225,7 @@ class GPU_IPC_CLIENT_EXPORT GpuChannelHost
       std::vector<SyncToken> sync_tokens,
       std::vector<Mailbox> mailboxes,
       int32_t frame_index,
-      base::OnceClosure callback);
+      base::OnceCallback<void(bool)> callback);
 #endif
 
   // Crashes the GPU process. This functionality is added here because
