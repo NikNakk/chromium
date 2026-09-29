@@ -25,7 +25,10 @@ import subprocess
 import sys
 
 EXPECTED_ANGLE_REVISION = "2bb28bbcef760ede0c084f4cf3341f495887f1f5"
+# The IOSurface key name is unchanged; the dictionary carries "version": 2.
 MARKER = "org.chromium.openxr.metal-foveation-v1"
+# Present only in the current bridge (physical-size check + acknowledgement).
+ACK_MARKER = "org.chromium.openxr.metal-foveation-applied"
 
 
 TEXTURE_HEADER_OLD = r"""    angle::Result bindTexImage(const gl::Context *context, egl::Surface *surface) override;
@@ -71,7 +74,7 @@ angle::Result TextureMtl::onLabelUpdate(const gl::Context *context)
     if (mNativeTextureStorage)
     {
         const std::string &label = mState.getLabel();
-        mNativeTextureStorage->get().label =
+        mNativeTextureStorage->getNativeTexture()->get().label =
             label.empty() ? nil : [NSString stringWithUTF8String:label.c_str()];
     }
     return angle::Result::Continue;
@@ -137,8 +140,25 @@ NAMESPACE_NEW = r"""namespace
 
 #if TARGET_OS_OSX
 
+// CFSTR() is not a constant expression; keep the keys as macros.
+#    define ANGLE_CHROMIUM_XR_FOVEATION_KEY CFSTR("org.chromium.openxr.metal-foveation-v1")
+#    define ANGLE_CHROMIUM_XR_FOVEATION_APPLIED_KEY \
+        CFSTR("org.chromium.openxr.metal-foveation-applied")
+
+// ANGLE attaches mip/slice views of a texture's native storage. Views carry
+// neither the label nor the IOSurface, so inspect the storage texture itself.
+id<MTLTexture> ChromiumXrRootTexture(id<MTLTexture> texture)
+{
+    while (texture != nil && texture.parentTexture != nil)
+    {
+        texture = texture.parentTexture;
+    }
+    return texture;
+}
+
 bool IsChromiumXrFoveatedTexture(id<MTLTexture> texture)
 {
+    texture = ChromiumXrRootTexture(texture);
     if (texture == nil || texture.label == nil)
     {
         return false;
@@ -149,13 +169,13 @@ bool IsChromiumXrFoveatedTexture(id<MTLTexture> texture)
 angle::ObjCPtr<NSDictionary>
 CopyChromiumXrFoveationMetadata(id<MTLTexture> texture)
 {
+    texture = ChromiumXrRootTexture(texture);
     if (texture == nil || texture.iosurface == nullptr)
     {
         return {};
     }
 
-    CFTypeRef value =
-        IOSurfaceCopyValue(texture.iosurface, CFSTR("org.chromium.openxr.metal-foveation-v1"));
+    CFTypeRef value = IOSurfaceCopyValue(texture.iosurface, ANGLE_CHROMIUM_XR_FOVEATION_KEY);
     if (value == nullptr)
     {
         return {};
@@ -171,9 +191,62 @@ CopyChromiumXrFoveationMetadata(id<MTLTexture> texture)
     return angle::adoptObjCPtr((__bridge NSDictionary *)value);
 }
 
-angle::ObjCPtr<id<MTLRasterizationRateMap>>
-BuildChromiumXrFoveationRateMap(id<MTLTexture> renderTexture, NSDictionary *metadata)
+// The XR process checks this before releasing the image to the OpenXR
+// runtime: only an image acknowledged with the serial it published is
+// composited foveated.
+void AcknowledgeChromiumXrFoveationMetadata(id<MTLTexture> texture, NSDictionary *metadata)
 {
+    texture = ChromiumXrRootTexture(texture);
+    NSNumber *serial = [metadata objectForKey:@"serial"];
+    if (texture != nil && texture.iosurface != nullptr &&
+        [serial isKindOfClass:[NSNumber class]])
+    {
+        IOSurfaceSetValue(texture.iosurface, ANGLE_CHROMIUM_XR_FOVEATION_APPLIED_KEY,
+                          (__bridge CFTypeRef)serial);
+    }
+}
+
+// Metadata differs every frame only by its serial; rebuild the Metal map only
+// when the recipe itself changes.
+bool SameChromiumXrFoveationRecipe(NSDictionary *a, NSDictionary *b)
+{
+    if (a == nil || b == nil)
+    {
+        return false;
+    }
+    // ANGLE's Metal backend is built without ARC: own the copies explicitly.
+    angle::ObjCPtr<NSMutableDictionary> recipeA = angle::adoptObjCPtr([a mutableCopy]);
+    angle::ObjCPtr<NSMutableDictionary> recipeB = angle::adoptObjCPtr([b mutableCopy]);
+    [recipeA.get() removeObjectForKey:@"serial"];
+    [recipeB.get() removeObjectForKey:@"serial"];
+    return [recipeA.get() isEqualToDictionary:recipeB.get()];
+}
+
+// Removing the key tells the XR process, which checks it before releasing
+// the image to the OpenXR runtime, that this image was rendered unfoveated.
+void RejectChromiumXrFoveationMetadata(id<MTLTexture> texture, const char *reason)
+{
+    texture = ChromiumXrRootTexture(texture);
+    static bool sLogged = false;
+    if (!sLogged)
+    {
+        NSLog(@"Chromium XR foveation: rejecting IOSurface rate-map metadata (%s); "
+              @"rendering unfoveated. Logged once.",
+              reason);
+        sLogged = true;
+    }
+    if (texture != nil && texture.iosurface != nullptr)
+    {
+        IOSurfaceRemoveValue(texture.iosurface, ANGLE_CHROMIUM_XR_FOVEATION_KEY);
+    }
+}
+
+angle::ObjCPtr<id<MTLRasterizationRateMap>>
+BuildChromiumXrFoveationRateMap(id<MTLTexture> renderTexture,
+                                NSDictionary *metadata,
+                                const char **outReason)
+{
+    *outReason = "invalid metadata";
     if (renderTexture == nil || metadata == nil)
     {
         return {};
@@ -182,14 +255,21 @@ BuildChromiumXrFoveationRateMap(id<MTLTexture> renderTexture, NSDictionary *meta
     NSNumber *versionValue = [metadata objectForKey:@"version"];
     NSNumber *widthValue = [metadata objectForKey:@"logical_width"];
     NSNumber *heightValue = [metadata objectForKey:@"logical_height"];
+    NSNumber *physicalWidthValue = [metadata objectForKey:@"physical_width"];
+    NSNumber *physicalHeightValue = [metadata objectForKey:@"physical_height"];
     NSNumber *zoneCountValue = [metadata objectForKey:@"zone_count"];
     NSArray *horizontalValues = [metadata objectForKey:@"horizontal"];
     NSArray *verticalValues = [metadata objectForKey:@"vertical"];
+    NSNumber *serialValue = [metadata objectForKey:@"serial"];
 
+    // Version 2 carries the physical size the OpenXR compositor will assume.
     if (![versionValue isKindOfClass:[NSNumber class]] ||
-        [versionValue unsignedIntValue] != 1 ||
+        ![serialValue isKindOfClass:[NSNumber class]] ||
+        [versionValue unsignedIntValue] != 2 ||
         ![widthValue isKindOfClass:[NSNumber class]] ||
         ![heightValue isKindOfClass:[NSNumber class]] ||
+        ![physicalWidthValue isKindOfClass:[NSNumber class]] ||
+        ![physicalHeightValue isKindOfClass:[NSNumber class]] ||
         ![zoneCountValue isKindOfClass:[NSNumber class]] ||
         ![horizontalValues isKindOfClass:[NSArray class]] ||
         ![verticalValues isKindOfClass:[NSArray class]])
@@ -199,17 +279,22 @@ BuildChromiumXrFoveationRateMap(id<MTLTexture> renderTexture, NSDictionary *meta
 
     const NSUInteger logicalWidth = [widthValue unsignedIntegerValue];
     const NSUInteger logicalHeight = [heightValue unsignedIntegerValue];
+    const NSUInteger expectedPhysicalWidth = [physicalWidthValue unsignedIntegerValue];
+    const NSUInteger expectedPhysicalHeight = [physicalHeightValue unsignedIntegerValue];
     const NSUInteger zoneCount = [zoneCountValue unsignedIntegerValue];
     if (logicalWidth == 0 || logicalHeight == 0 || zoneCount == 0 || zoneCount > 64 ||
+        expectedPhysicalWidth == 0 || expectedPhysicalHeight == 0 ||
         horizontalValues.count != zoneCount || verticalValues.count != zoneCount ||
         renderTexture.width != logicalWidth || renderTexture.height != logicalHeight)
     {
+        *outReason = "metadata does not describe this render target";
         return {};
     }
 
     id<MTLDevice> device = renderTexture.device;
     if (device == nil || ![device supportsRasterizationRateMapWithLayerCount:1])
     {
+        *outReason = "device has no rasterization-rate maps";
         return {};
     }
 
@@ -243,6 +328,7 @@ BuildChromiumXrFoveationRateMap(id<MTLTexture> renderTexture, NSDictionary *meta
                        vertical:vertical.data()]);
     if (!layer)
     {
+        *outReason = "rate-map layer creation failed";
         return {};
     }
 
@@ -255,27 +341,31 @@ BuildChromiumXrFoveationRateMap(id<MTLTexture> renderTexture, NSDictionary *meta
         angle::adoptObjCPtr([device newRasterizationRateMapWithDescriptor:descriptor.get()]);
     if (!rateMap)
     {
+        *outReason = "rate-map creation failed";
         return {};
     }
 
-    // Chromium's fused path deliberately keeps the OpenXR/IOSurface texture at
-    // logical size: Metal writes the compact physical raster into its leading
-    // region, and the OpenXR compositor consumes the matching logical->physical
-    // mapping supplied by XR_MNDX_foveation.
+    // Chromium keeps the OpenXR/IOSurface texture at logical size: Metal
+    // writes the compact physical raster into its leading region and the
+    // OpenXR compositor samples it with the runtime's logical->physical map.
+    // That is only correct if this reconstruction produces exactly the
+    // physical extent the runtime computed; never render with a different map.
     const MTLSize physicalSize = [rateMap.get() physicalSizeForLayer:0];
-    if (physicalSize.width == 0 || physicalSize.height == 0 ||
+    if (physicalSize.width != expectedPhysicalWidth ||
+        physicalSize.height != expectedPhysicalHeight ||
         physicalSize.width > renderTexture.width || physicalSize.height > renderTexture.height)
     {
+        *outReason = "reconstructed physical size differs from the runtime's";
         return {};
     }
 
+    *outReason = nullptr;
     return rateMap;
 }
 
 #endif  // TARGET_OS_OSX
 
 #define ANGLE_MTL_CMD_X"""
-
 RESTART_OLD = r"""    // Convert to Objective-C descriptor
     mRenderPassDesc.convertToMetalDesc(mCachedRenderPassDescObjC, deviceMaxRenderTargets);
 
@@ -286,8 +376,8 @@ RESTART_NEW = r"""    // Convert to Objective-C descriptor
     mRenderPassDesc.convertToMetalDesc(mCachedRenderPassDescObjC, deviceMaxRenderTargets);
 
 #if TARGET_OS_OSX
-    // The isolated XR service attaches graphics-independent foveation rates to
-    // the IOSurface before Blink/ANGLE renders the frame. Consume them at the
+    // The isolated XR service attaches a resolved Metal rate-map recipe to
+    // the IOSurface before Blink/ANGLE renders the frame. Consume it at the
     // last graphics-API boundary, immediately before Metal creates the native
     // render encoder. Ordinary WebGL surfaces have no metadata and remain
     // completely unchanged.
@@ -318,12 +408,13 @@ RESTART_NEW = r"""    // Convert to Objective-C descriptor
         if (metadata && renderTexture != nil)
         {
             const bool metadataChanged =
-                !mXrFoveationMetadata ||
-                ![mXrFoveationMetadata.get() isEqualToDictionary:metadata.get()];
+                !SameChromiumXrFoveationRecipe(mXrFoveationMetadata.get(), metadata.get());
             if (metadataChanged)
             {
+                const char *rejectReason = nullptr;
                 angle::ObjCPtr<id<MTLRasterizationRateMap>> rateMap =
-                    BuildChromiumXrFoveationRateMap(renderTexture, metadata.get());
+                    BuildChromiumXrFoveationRateMap(renderTexture, metadata.get(),
+                                                    &rejectReason);
                 if (rateMap)
                 {
                     mXrFoveationMetadata = metadata;
@@ -333,6 +424,7 @@ RESTART_NEW = r"""    // Convert to Objective-C descriptor
                 {
                     mXrFoveationMetadata.reset();
                     mXrFoveationRateMap.reset();
+                    RejectChromiumXrFoveationMetadata(metadataTexture, rejectReason);
                 }
             }
 
@@ -340,6 +432,7 @@ RESTART_NEW = r"""    // Convert to Objective-C descriptor
             {
                 mCachedRenderPassDescObjC.get().rasterizationRateMap =
                     mXrFoveationRateMap.get();
+                AcknowledgeChromiumXrFoveationMetadata(metadataTexture, metadata.get());
             }
         }
     }
@@ -348,12 +441,29 @@ RESTART_NEW = r"""    // Convert to Objective-C descriptor
     // The actual Objective-C encoder will be created later in endEncoding(), we do so in order
 """
 
-
 def _replace_once(text: str, old: str, new: str, label: str) -> str:
     count = text.count(old)
     if count != 1:
         raise RuntimeError(f"{label}: expected exactly one source match, found {count}")
     return text.replace(old, new, 1)
+
+
+def _replace_count(text: str, old: str, new: str, count: int, label: str) -> str:
+    found = text.count(old)
+    if found != count:
+        raise RuntimeError(f"{label}: expected {count} source matches, found {found}")
+    return text.replace(old, new)
+
+
+def _pristine_source(angle_root: Path, path: Path) -> str:
+    relative = path.relative_to(angle_root).as_posix()
+    result = subprocess.run(
+        ["git", "-C", str(angle_root), "show", f"HEAD:{relative}"],
+        check=True,
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    return result.stdout
 
 
 def _angle_revision(angle_root: Path) -> str | None:
@@ -390,6 +500,19 @@ def apply_patch(check_only: bool) -> bool:
 
     header = header_path.read_text()
     impl = impl_path.read_text()
+
+    # An older bridge (no physical-size validation or acknowledgement, and in
+    # the earliest variant no privileged-target gate) cannot be upgraded in
+    # place reliably. Rebuild the two render-pass files from pristine ANGLE
+    # sources instead; the bridge is the only intended change to them.
+    if MARKER in impl and ACK_MARKER not in impl:
+        header = _pristine_source(angle_root, header_path)
+        impl = _pristine_source(angle_root, impl_path)
+        if not check_only:
+            print(
+                "Chromium XR ANGLE foveation patch: replacing an older bridge",
+                file=sys.stderr,
+            )
     texture_header = texture_header_path.read_text()
     texture_impl = texture_impl_path.read_text()
 
@@ -419,10 +542,13 @@ def apply_patch(check_only: bool) -> bool:
 
     new_texture_impl = texture_impl
     if "ANGLE_TRY(onLabelUpdate(context));" not in new_texture_impl:
-        new_texture_impl = _replace_once(
+        # Both setEGLImageTarget() and bindTexImage() create the native
+        # storage Chromium's XR SharedImages use; label both.
+        new_texture_impl = _replace_count(
             new_texture_impl,
             TEXTURE_BIND_OLD,
             TEXTURE_BIND_NEW,
+            2,
             "TextureMtl.mm bind label propagation",
         )
     if "TextureMtl::onLabelUpdate" not in new_texture_impl:
@@ -457,12 +583,12 @@ def apply_patch(check_only: bool) -> bool:
             "IOSurface include anchor",
         )
 
-    if "BuildChromiumXrFoveationRateMap" not in new_impl:
+    if "AcknowledgeChromiumXrFoveationMetadata(id<MTLTexture>" not in new_impl:
         new_impl = _replace_once(
             new_impl, NAMESPACE_OLD, NAMESPACE_NEW, "Metal helpers"
         )
 
-    if "mCachedRenderPassDescObjC.get().rasterizationRateMap = nil;" not in new_impl:
+    if "AcknowledgeChromiumXrFoveationMetadata(metadataTexture" not in new_impl:
         new_impl = _replace_once(
             new_impl, RESTART_OLD, RESTART_NEW, "render-pass hook"
         )
