@@ -246,6 +246,39 @@ be replaced with the upstream API rather than maintained in parallel.
 For PSVR2 testing, Monado must also expose eye gaze, for example by ensuring
 `PSVR2_GAZE_STREAMS=1` reaches `monado-service`.
 
+### Migration to standard OpenXR foveation control
+
+The current Chromium path predates Monado's standards-oriented foveation
+implementation. Monado now supports the standard control plane built from
+`XR_FB_swapchain_update_state`, `XR_FB_foveation`,
+`XR_FB_foveation_configuration`, and
+`XR_META_foveation_eye_tracked`. In that model, eye tracking can remain
+runtime-private; applications do not need to create an
+`XR_EXT_eye_gaze_interaction` action merely to obtain gaze-driven foveation.
+
+Chromium should prefer that control plane once its packed-stereo renderer can
+consume the runtime-owned Metal state. The remaining Metal transport is
+necessarily graphics-API-specific; the current Monado prototype exposes
+`XR_MNDX_foveation_metal` to return the runtime-owned
+`MTLRasterizationRateMap` and its revision.
+
+There is currently one important mismatch: Chromium's base WebXR projection
+swapchain is a single side-by-side stereo texture, while Monado's Metal bridge
+returns a foveation map for one OpenXR view at a time. Chromium's existing
+Metal backend intentionally builds one packed-target map containing both
+foveal centres. Therefore the old Chromium path remains the compatibility path
+until one of these is implemented:
+
+1. a runtime Metal query that can return one combined multi-view/packed-target
+   map;
+2. per-eye/array rendering in Chromium so the runtime's per-view maps can be
+   consumed directly; or
+3. a temporary hybrid where FB/META owns policy and gaze while Chromium still
+   builds the packed Metal map.
+
+Do not remove the MNDX policy compatibility path until the packed-stereo case
+has an equivalent standard-control implementation.
+
 ## GPU completion and swapchain release
 
 A Chromium `SyncToken` becoming signalled only guarantees that the GPU process
