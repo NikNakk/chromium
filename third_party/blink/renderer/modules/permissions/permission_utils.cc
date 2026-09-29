@@ -161,6 +161,8 @@ String PermissionNameToString(PermissionName name) {
       return "ar";
     case PermissionName::HAND_TRACKING:
       return "hand-tracking";
+    case PermissionName::EYE_TRACKING:
+      return "eye-tracking";
     case PermissionName::WEB_PRINTING:
       return "web-printing";
     case PermissionName::SMART_CARD:
