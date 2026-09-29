@@ -96,6 +96,10 @@ std::optional<blink::PermissionType> XrPermissionResults::GetPermissionFor(
     return blink::PermissionType::HAND_TRACKING;
   }
   if (feature == device::mojom::XRSessionFeature::DYNAMIC_FOVEATION) {
+    // The gaze pose never leaves the isolated XR path, but the resulting
+    // foveation pattern may still be observable through page rendering.
+    // Treat gaze-driven foveation as eye-tracking access and require explicit
+    // user permission.
     return blink::PermissionType::EYE_TRACKING;
   }
 
