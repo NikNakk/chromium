@@ -113,7 +113,7 @@ class OpenXrApiWrapper {
   std::vector<mojom::XRViewPtr> GetViews() const;
   mojom::VRPosePtr GetViewerPose() const;
   std::vector<mojom::XRInputSourceStatePtr> GetInputState();
-  mojom::XRFoveationDataPtr GetFoveationData() const;
+  void UpdateFoveation() const;
   void OnHideInputSources();
 
   std::vector<mojom::XRViewPtr> GetDefaultViews() const;

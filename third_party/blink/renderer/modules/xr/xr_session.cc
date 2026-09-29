@@ -1953,14 +1953,6 @@ void XRSession::UpdatePresentationFrameState(
     }
   }
 
-  // Keep the internal foveation inputs paired with this presentation frame.
-  // They are consumed only by Chromium's XR rendering path, never exposed to
-  // page script.
-  foveation_data_ =
-      frame_data && frame_data->foveation_data
-          ? frame_data->foveation_data.Clone()
-          : nullptr;
-
   // Update poses
   mojo_from_viewer_ =
       frame_data ? getPoseMatrix(frame_data->render_info->mojo_from_viewer)

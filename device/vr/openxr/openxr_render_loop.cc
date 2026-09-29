@@ -750,9 +750,12 @@ mojom::XRFrameDataPtr OpenXrRenderLoop::GetNextFrameData() {
 
   // Unless we are fully synchronized/visible we shouldn't report input state.
   if (visibility_state_ == mojom::XRVisibilityState::VISIBLE) {
-    // Syncing the input action sets also updates the internal eye-gaze action.
+    // UA-owned immersive media may use an internal eye-gaze action for
+    // foveation. Page-created WebXR sessions never receive or activate gaze.
     frame_data->input_state = openxr_->GetInputState();
-    frame_data->foveation_data = openxr_->GetFoveationData();
+    if (is_ua_immersive_media_session_) {
+      openxr_->UpdateFoveation();
+    }
   }
 
   frame_data->render_info->mojo_from_viewer = openxr_->GetViewerPose();

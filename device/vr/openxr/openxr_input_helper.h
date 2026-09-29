@@ -30,6 +30,7 @@ class OpenXRInputHelper {
       XrSession session,
       XrSpace local_space,
       bool hand_input_enabled,
+      bool eye_gaze_enabled,
       std::unique_ptr<OpenXRInputHelper>* helper);
 
   OpenXRInputHelper(XrSession session,
@@ -71,7 +72,8 @@ class OpenXRInputHelper {
   XrResult Initialize(XrInstance instance,
                       XrSystemId system,
                       const std::string& system_name,
-                      const OpenXrExtensionHelper& extension_helper);
+                      const OpenXrExtensionHelper& extension_helper,
+                      bool eye_gaze_enabled);
 
   XrResult SyncActions(XrTime predicted_display_time);
 

@@ -338,10 +338,6 @@ class XRSession final : public EventTarget,
     return stage_parameters_;
   }
 
-  const device::mojom::blink::XRFoveationData* FoveationData() const {
-    return foveation_data_.get();
-  }
-
   bool EmulatedPosition() const {
     // If we don't have display info then we should be using the identity
     // reference space, which by definition will be emulating the position.
@@ -670,7 +666,6 @@ class XRSession final : public EventTarget,
 
   uint32_t stage_parameters_id_ = 0;
   device::mojom::blink::VRStageParametersPtr stage_parameters_;
-  device::mojom::blink::XRFoveationDataPtr foveation_data_;
 
   HeapMojoReceiver<device::mojom::blink::XRSessionClient, XRSession>
       client_receiver_;

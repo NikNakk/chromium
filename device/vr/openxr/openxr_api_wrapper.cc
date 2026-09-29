@@ -705,21 +705,30 @@ XrResult OpenXrApiWrapper::InitSession(
   // Swapchain must be created after size is updated.
   RETURN_IF_XR_FAILED(CreateSwapchain());
 
-  bool enable_hand_tracking =
+  const bool enable_hand_tracking =
       std::ranges::contains(session_options_->required_features,
                             device::mojom::XRSessionFeature::HAND_INPUT) ||
       std::ranges::contains(session_options_->optional_features,
                             device::mojom::XRSessionFeature::HAND_INPUT);
+  // Eye tracking is privileged UA input. Do not create or synchronize an
+  // eye-gaze action for page-created WebXR sessions.
+  const bool enable_eye_gaze = session_options_->is_ua_immersive_media;
 
   RETURN_IF_XR_FAILED(OpenXRInputHelper::CreateOpenXRInputHelper(
       instance_, system_, system_properties.systemName, extension_helper,
-      session_, local_space_, enable_hand_tracking, &input_helper_));
+      session_, local_space_, enable_hand_tracking, enable_eye_gaze,
+      &input_helper_));
 
-  // Keep policy selection above the graphics backend. "Aggressive" is the
-  // currently validated 1.0/0.5/0.25 profile; backends only translate it into
-  // their native variable-rate mechanism.
-  foveation_policy_ = extension_helper.GetFoveationPolicy(
-      instance_, system_, OpenXrFoveationLevel::kAggressive);
+  // Keep policy selection above the graphics backend. Dynamic gaze-driven
+  // foveation is restricted to browser-owned immersive media sessions; page
+  // WebXR remains unfoveated until fixedFoveation is wired as an explicit,
+  // non-gaze-bearing opt-in.
+  if (enable_eye_gaze) {
+    foveation_policy_ = extension_helper.GetFoveationPolicy(
+        instance_, system_, OpenXrFoveationLevel::kAggressive);
+  } else {
+    foveation_policy_.reset();
+  }
 
   // Make sure all of the objects we initialized are there.
   DCHECK(HasSession());
@@ -1502,21 +1511,22 @@ std::vector<mojom::XRInputSourceStatePtr> OpenXrApiWrapper::GetInputState() {
   return input_helper_->GetInputState(GetPredictedDisplayTime());
 }
 
-mojom::XRFoveationDataPtr OpenXrApiWrapper::GetFoveationData() const {
-  auto no_foveation = [this]() -> mojom::XRFoveationDataPtr {
+void OpenXrApiWrapper::UpdateFoveation() const {
+  auto disable_foveation = [this]() {
     graphics_binding_->ClearBaseLayerFoveation();
-    return nullptr;
   };
 
   if (!foveation_policy_ || !input_helper_ || !HasFrameState() ||
       primary_view_config_.Views().empty()) {
-    return no_foveation();
+    disable_foveation();
+    return;
   }
 
   const std::optional<XrPosef> gaze_pose = input_helper_->GetEyeGazePose(
       view_space_, frame_state_.predictedDisplayTime);
   if (!gaze_pose) {
-    return no_foveation();
+    disable_foveation();
+    return;
   }
 
   // TransformVector() is no longer part of gfx::Transform. Use homogeneous
@@ -1531,26 +1541,20 @@ mojom::XRFoveationDataPtr OpenXrApiWrapper::GetFoveationData() const {
   const float horizontal_length =
       std::sqrt(direction[0] * direction[0] + direction[2] * direction[2]);
   if (horizontal_length <= 1e-6f || direction[2] >= -1e-6f) {
-    return no_foveation();
+    disable_foveation();
+    return;
   }
 
   const float tangent_x = direction[0] / -direction[2];
   const float tangent_y = direction[1] / horizontal_length;
-
-  auto data = mojom::XRFoveationData::New();
-  data->policy = mojom::XRFoveationPolicyData::New();
-  data->policy->center_rate = foveation_policy_->center_rate;
-  data->policy->middle_rate = foveation_policy_->middle_rate;
-  data->policy->peripheral_rate = foveation_policy_->peripheral_rate;
-  data->policy->center_half_extent = foveation_policy_->center_half_extent;
-  data->policy->middle_half_extent = foveation_policy_->middle_half_extent;
 
   std::vector<gfx::PointF> target_centers;
   target_centers.reserve(primary_view_config_.Views().size());
   const gfx::Size target_size =
       graphics_binding_->GetProjectionLayerSwapchainImageSize();
   if (target_size.IsEmpty()) {
-    return no_foveation();
+    disable_foveation();
+    return;
   }
 
   float x_offset = static_cast<float>(primary_view_config_.Viewport().x());
@@ -1561,18 +1565,14 @@ mojom::XRFoveationDataPtr OpenXrApiWrapper::GetFoveationData() const {
     const float down = std::tan(view.fov.angleDown);
     const float up = std::tan(view.fov.angleUp);
     if (!(right > left) || !(up > down)) {
-      return no_foveation();
+      disable_foveation();
+      return;
     }
 
     const float center_x =
         std::clamp((tangent_x - left) / (right - left), 0.0f, 1.0f);
     const float center_y =
         std::clamp(1.0f - (tangent_y - down) / (up - down), 0.0f, 1.0f);
-
-    auto view_data = mojom::XRFoveationViewData::New();
-    view_data->center_x = center_x;
-    view_data->center_y = center_y;
-    data->views.push_back(std::move(view_data));
 
     const auto& properties = primary_view_config_.Properties()[i];
     target_centers.emplace_back(
@@ -1581,15 +1581,12 @@ mojom::XRFoveationDataPtr OpenXrApiWrapper::GetFoveationData() const {
     x_offset += properties.Width();
   }
 
-  // Build the compositor-side mirror of the backend rate map before telling
-  // Blink to foveate the render target. If the native backend cannot represent
-  // this policy, leave the frame unfoveated on both sides.
+  // Build the compositor-side mirror and publish the renderer-side rate map
+  // metadata together. No gaze coordinates cross into the renderer process.
   if (!graphics_binding_->ConfigureBaseLayerFoveation(*foveation_policy_,
                                                        target_centers)) {
-    return no_foveation();
+    disable_foveation();
   }
-
-  return data;
 }
 
 void OpenXrApiWrapper::OnHideInputSources() {

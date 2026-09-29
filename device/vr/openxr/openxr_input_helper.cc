@@ -29,13 +29,14 @@ XrResult OpenXRInputHelper::CreateOpenXRInputHelper(
     XrSession session,
     XrSpace local_space,
     bool hand_input_enabled,
+    bool eye_gaze_enabled,
     std::unique_ptr<OpenXRInputHelper>* helper) {
   std::unique_ptr<OpenXRInputHelper> new_helper =
       std::make_unique<OpenXRInputHelper>(session, local_space,
                                           hand_input_enabled);
 
-  RETURN_IF_XR_FAILED(
-      new_helper->Initialize(instance, system, system_name, extension_helper));
+  RETURN_IF_XR_FAILED(new_helper->Initialize(
+      instance, system, system_name, extension_helper, eye_gaze_enabled));
   *helper = std::move(new_helper);
   return XR_SUCCESS;
 }
@@ -70,7 +71,8 @@ XrResult OpenXRInputHelper::Initialize(
     XrInstance instance,
     XrSystemId system,
     const std::string& system_name,
-    const OpenXrExtensionHelper& extension_helper) {
+    const OpenXrExtensionHelper& extension_helper,
+    bool eye_gaze_enabled) {
   RETURN_IF_XR_FAILED(path_helper_->Initialize(instance, system_name));
 
   // This map is used to store bindings for different kinds of interaction
@@ -81,7 +83,8 @@ XrResult OpenXRInputHelper::Initialize(
   // Eye gaze participates in the same one-shot action-set attachment as the
   // controllers. OpenXR does not permit attaching another action set later in
   // the session, so this must be created before xrAttachSessionActionSets.
-  if (extension_helper.ExtensionEnumeration()->ExtensionSupported(
+  if (eye_gaze_enabled &&
+      extension_helper.ExtensionEnumeration()->ExtensionSupported(
           XR_EXT_EYE_GAZE_INTERACTION_EXTENSION_NAME)) {
     XrSystemEyeGazeInteractionPropertiesEXT gaze_properties = {
         XR_TYPE_SYSTEM_EYE_GAZE_INTERACTION_PROPERTIES_EXT};
