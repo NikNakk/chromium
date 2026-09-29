@@ -1010,7 +1010,7 @@ void OpenXrGraphicsBindingMetal::CreateSharedImages(
                             gfx::ColorSpace::MatrixID::RGB,
                             gfx::ColorSpace::RangeID::FULL);
   const bool foveation_capable_base_layer =
-      IsDynamicFoveationAllowed() && layer.GetLayerId() == kInvalidLayerId;
+      SupportsDynamicFoveation() && layer.GetLayerId() == kInvalidLayerId;
   const gpu::SharedImageInfo direct_si_info{
       viz::SinglePlaneFormat::kBGRA_8888, runtime_size, color_space, usage,
       foveation_capable_base_layer ? "OpenXrMetalDirectFoveated"
