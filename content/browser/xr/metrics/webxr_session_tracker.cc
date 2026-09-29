@@ -88,6 +88,7 @@ void WebXRSessionTracker::ReportFeatureUsed(
     case XRSessionFeature::LAYERS:
     case XRSessionFeature::FRONT_FACING:
     case XRSessionFeature::WEBGPU:
+    case XRSessionFeature::DYNAMIC_FOVEATION:
       // Not recording metrics for these features currently.
       break;
   }
@@ -133,6 +134,7 @@ void WebXRSessionTracker::SetFeatureRequest(
     case XRSessionFeature::LAYERS:
     case XRSessionFeature::FRONT_FACING:
     case XRSessionFeature::WEBGPU:
+    case XRSessionFeature::DYNAMIC_FOVEATION:
       // Not recording metrics for these features currently.
       break;
   }
