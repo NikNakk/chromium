@@ -127,11 +127,17 @@ OpenXrCompositionLayer::GetSwapchainImages() const {
 }
 
 XrResult OpenXrCompositionLayer::CreateSwapchain(XrSession session,
-                                                 uint32_t sample_count) {
+                                                 uint32_t sample_count,
+                                                 bool foveation_capable) {
   DCHECK(!HasColorSwapchain());
   DCHECK(GetSwapchainImages().empty());
 
+  XrSwapchainCreateInfoFoveationFB foveation_create_info{
+      XR_TYPE_SWAPCHAIN_CREATE_INFO_FOVEATION_FB};
   XrSwapchainCreateInfo swapchain_create_info = {XR_TYPE_SWAPCHAIN_CREATE_INFO};
+  if (foveation_capable) {
+    swapchain_create_info.next = &foveation_create_info;
+  }
   swapchain_create_info.arraySize = 1;
   swapchain_create_info.format = graphics_binding_->GetSwapchainFormat(session);
 

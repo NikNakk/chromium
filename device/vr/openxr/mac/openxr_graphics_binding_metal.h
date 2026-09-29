@@ -57,6 +57,8 @@ class DEVICE_VR_EXPORT OpenXrGraphicsBindingMetal
   bool ShouldFlipSubmittedImage(OpenXrCompositionLayer& layer) const override;
   bool PublishBaseLayerFoveation(
       const OpenXrFoveationTargetConfig& config) override;
+  bool PublishBaseLayerResolvedFoveation(
+      const OpenXrResolvedFoveationRateMap& state) override;
   void ClearPublishedBaseLayerFoveation() override;
   std::unique_ptr<OpenXrCompositionLayer::GraphicsBindingData>
   CreateLayerGraphicsBindingData() const override;

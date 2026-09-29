@@ -1221,6 +1221,60 @@ bool OpenXrGraphicsBindingMetal::PublishBaseLayerFoveation(
   return true;
 }
 
+bool OpenXrGraphicsBindingMetal::PublishBaseLayerResolvedFoveation(
+    const OpenXrResolvedFoveationRateMap& state) {
+  if (!base_layer_ || state.logical_size.IsEmpty() ||
+      state.horizontal_rates.size() != kFoveationMetadataZoneCount ||
+      state.vertical_rates.size() != kFoveationMetadataZoneCount) {
+    return false;
+  }
+
+  OpenXrSwapchainInfo* swapchain_info =
+      base_layer_->GetActiveSwapchainImage();
+  if (!swapchain_info || !swapchain_info->metal_texture) {
+    return false;
+  }
+
+  id<MTLTexture> render_texture = nil;
+  auto fallback =
+      impl_->fallback_textures.find(swapchain_info->metal_texture.get());
+  if (fallback != impl_->fallback_textures.end()) {
+    render_texture = fallback->second;
+  } else {
+    render_texture =
+        (__bridge id<MTLTexture>)swapchain_info->metal_texture.get();
+  }
+
+  IOSurfaceRef surface = render_texture ? render_texture.iosurface : nullptr;
+  if (!surface) {
+    DLOG(WARNING) << __func__
+                  << ": active WebXR render texture is not IOSurface-backed";
+    return false;
+  }
+
+  NSMutableArray<NSNumber*>* horizontal =
+      [NSMutableArray arrayWithCapacity:kFoveationMetadataZoneCount];
+  NSMutableArray<NSNumber*>* vertical =
+      [NSMutableArray arrayWithCapacity:kFoveationMetadataZoneCount];
+  for (uint32_t i = 0; i < kFoveationMetadataZoneCount; ++i) {
+    [horizontal addObject:@(state.horizontal_rates[i])];
+    [vertical addObject:@(state.vertical_rates[i])];
+  }
+
+  NSDictionary* metadata = @{
+    @"version" : @1,
+    @"logical_width" : @(state.logical_size.width()),
+    @"logical_height" : @(state.logical_size.height()),
+    @"zone_count" : @(kFoveationMetadataZoneCount),
+    @"horizontal" : horizontal,
+    @"vertical" : vertical,
+  };
+  NSString* key = [NSString stringWithUTF8String:kFoveationMetadataKey];
+  IOSurfaceSetValue(surface, (__bridge CFStringRef)key,
+                    (__bridge CFTypeRef)metadata);
+  return true;
+}
+
 void OpenXrGraphicsBindingMetal::ClearPublishedBaseLayerFoveation() {
   if (!base_layer_) {
     return;

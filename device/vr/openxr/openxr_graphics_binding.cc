@@ -87,6 +87,20 @@ bool OpenXrGraphicsBinding::ConfigureBaseLayerFoveation(
   return true;
 }
 
+bool OpenXrGraphicsBinding::ConfigureBaseLayerResolvedFoveation(
+    const OpenXrResolvedFoveationRateMap& state) {
+  if (state.logical_size.IsEmpty() || state.horizontal_rates.empty() ||
+      state.vertical_rates.empty() ||
+      !PublishBaseLayerResolvedFoveation(state)) {
+    ClearPublishedBaseLayerFoveation();
+    return false;
+  }
+  // FB/META state is runtime-owned. Keep the legacy composition pNext map
+  // empty so standards-path submission does not depend on XR_MNDX_foveation.
+  current_base_foveation_mapping_.reset();
+  return true;
+}
+
 void OpenXrGraphicsBinding::ClearBaseLayerFoveation() {
   ClearPublishedBaseLayerFoveation();
   current_base_foveation_mapping_.reset();
@@ -98,6 +112,11 @@ void OpenXrGraphicsBinding::ClearBaseLayerFoveation() {
 bool OpenXrGraphicsBinding::PublishBaseLayerFoveation(
     const OpenXrFoveationTargetConfig& config) {
   return true;
+}
+
+bool OpenXrGraphicsBinding::PublishBaseLayerResolvedFoveation(
+    const OpenXrResolvedFoveationRateMap& state) {
+  return false;
 }
 
 void OpenXrGraphicsBinding::ClearPublishedBaseLayerFoveation() {}
@@ -400,9 +419,16 @@ std::unique_ptr<OpenXrLayers> OpenXrGraphicsBinding::GetLayersForViewConfig(
 
 XrResult OpenXrGraphicsBinding::CreateBaseLayerSwapchain(
     XrSession session,
-    uint32_t sample_count) {
+    uint32_t sample_count,
+    bool foveation_capable) {
   CHECK(base_layer_);
-  return base_layer_->CreateSwapchain(session, sample_count);
+  return base_layer_->CreateSwapchain(session, sample_count,
+                                      foveation_capable);
+}
+
+XrSwapchain OpenXrGraphicsBinding::GetBaseLayerColorSwapchain() const {
+  CHECK(base_layer_);
+  return base_layer_->color_swapchain();
 }
 
 void OpenXrGraphicsBinding::DestroyBaseLayerSwapchain(

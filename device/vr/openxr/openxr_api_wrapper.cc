@@ -61,6 +61,20 @@ namespace {
 // polled.
 constexpr base::TimeDelta kTimeBetweenPollingEvents = base::Seconds(1);
 
+XrFoveationLevelFB GetStandardFoveationLevel(OpenXrFoveationLevel level) {
+  switch (level) {
+    case OpenXrFoveationLevel::kReference:
+      return XR_FOVEATION_LEVEL_LOW_FB;
+    case OpenXrFoveationLevel::kStrong:
+      return XR_FOVEATION_LEVEL_MEDIUM_FB;
+    case OpenXrFoveationLevel::kAggressive:
+    case OpenXrFoveationLevel::kAggressivePlus:
+    case OpenXrFoveationLevel::kNearExtreme:
+    case OpenXrFoveationLevel::kExtreme:
+      return XR_FOVEATION_LEVEL_HIGH_FB;
+  }
+}
+
 OpenXrFoveationLevel GetDiagnosticFoveationLevel() {
   const base::CommandLine* command_line =
       base::CommandLine::ForCurrentProcess();
@@ -190,6 +204,9 @@ void OpenXrApiWrapper::Reset() {
   frame_state_ = {};
   input_helper_.reset();
   foveation_policy_.reset();
+  standard_foveation_enabled_ = false;
+  standard_foveation_eye_tracked_ = false;
+  standard_foveation_profile_ = XR_NULL_HANDLE;
   foveation_fixed_center_ = false;
 
   session_options_.reset();
@@ -256,6 +273,13 @@ void OpenXrApiWrapper::Uninitialize() {
   light_estimator_.reset();
   scene_understanding_manager_.reset();
   mesh_manager_.reset();
+
+  if (standard_foveation_profile_ != XR_NULL_HANDLE && extension_helper_ &&
+      extension_helper_->ExtensionMethods().xrDestroyFoveationProfileFB) {
+    extension_helper_->ExtensionMethods().xrDestroyFoveationProfileFB(
+        standard_foveation_profile_);
+    standard_foveation_profile_ = XR_NULL_HANDLE;
+  }
 
   // Destroying an session in OpenXr also destroys all child objects of that
   // instance (including the swapchain, and spaces objects),
@@ -611,11 +635,12 @@ XrResult OpenXrApiWrapper::EnableSupportedFeatures(
         break;
 
       case mojom::XRSessionFeature::DYNAMIC_FOVEATION:
-        // The feature is enabled only if the OpenXR profile was obtained and
-        // the active graphics binding actually created a foveation backend.
-        // This keeps optional-feature reporting honest on unsupported backends.
-        is_enabled = foveation_policy_.has_value() &&
-                     graphics_binding_->SupportsDynamicFoveation();
+        is_enabled =
+            (standard_foveation_enabled_ &&
+             standard_foveation_eye_tracked_ &&
+             standard_foveation_profile_ != XR_NULL_HANDLE) ||
+            (foveation_policy_.has_value() &&
+             graphics_binding_->SupportsDynamicFoveation());
         break;
 
       case mojom::XRSessionFeature::REF_SPACE_VIEWER:
@@ -753,6 +778,16 @@ XrResult OpenXrApiWrapper::InitSession(
 
   const bool allow_foveation =
       ua_foveation_enabled || page_dynamic_foveation_supported;
+  const bool wants_dynamic_foveation =
+      ua_dynamic_foveation || page_dynamic_foveation_supported;
+
+  standard_foveation_enabled_ =
+      allow_foveation &&
+      (wants_dynamic_foveation
+           ? extension_helper.SupportsStandardEyeTrackedFoveation()
+           : extension_helper.SupportsStandardFoveation());
+  standard_foveation_eye_tracked_ =
+      standard_foveation_enabled_ && wants_dynamic_foveation;
 
   graphics_binding_->OnSessionCreated(local_space_, webgpu_session,
                                       allow_foveation);
@@ -774,6 +809,22 @@ XrResult OpenXrApiWrapper::InitSession(
   // Swapchain must be created after size is updated.
   RETURN_IF_XR_FAILED(CreateSwapchain());
 
+  const OpenXrFoveationLevel selected_foveation_level =
+      session_options_->is_ua_immersive_media
+          ? GetDiagnosticFoveationLevel()
+          : OpenXrFoveationLevel::kAggressive;
+  if (standard_foveation_enabled_) {
+    const XrResult standard_result = CreateStandardFoveationProfile(
+        selected_foveation_level, standard_foveation_eye_tracked_);
+    if (XR_FAILED(standard_result)) {
+      DLOG(WARNING) << "Standard OpenXR foveation profile creation failed; "
+                       "falling back to legacy path, result="
+                    << standard_result;
+      standard_foveation_enabled_ = false;
+      standard_foveation_eye_tracked_ = false;
+    }
+  }
+
   const bool enable_hand_tracking =
       std::ranges::contains(session_options_->required_features,
                             device::mojom::XRSessionFeature::HAND_INPUT) ||
@@ -784,7 +835,8 @@ XrResult OpenXrApiWrapper::InitSession(
   // dynamic-foveation feature and the runtime proving it can support it.
   // The gaze pose stays inside the XR process.
   const bool enable_eye_gaze =
-      ua_dynamic_foveation || page_dynamic_foveation_supported;
+      !standard_foveation_enabled_ &&
+      (ua_dynamic_foveation || page_dynamic_foveation_supported);
 
   RETURN_IF_XR_FAILED(OpenXRInputHelper::CreateOpenXRInputHelper(
       instance_, system_, system_properties.systemName, extension_helper,
@@ -794,20 +846,18 @@ XrResult OpenXrApiWrapper::InitSession(
   // Keep policy selection above the graphics backend. Browser-owned
   // immersive media has diagnostic off/fixed/dynamic controls. Page WebXR
   // remains dynamic-only and requires the permissioned session feature.
-  if (allow_foveation) {
-    const OpenXrFoveationLevel level =
-        session_options_->is_ua_immersive_media
-            ? GetDiagnosticFoveationLevel()
-            : OpenXrFoveationLevel::kAggressive;
-    foveation_policy_ =
-        extension_helper.GetFoveationPolicy(instance_, system_, level);
-    DVLOG(1) << "XR foveation: ua_immersive_media="
-             << session_options_->is_ua_immersive_media
-             << " fixed=" << foveation_fixed_center_
-             << " level=" << static_cast<int>(level);
+  if (allow_foveation && !standard_foveation_enabled_) {
+    foveation_policy_ = extension_helper.GetFoveationPolicy(
+        instance_, system_, selected_foveation_level);
   } else {
     foveation_policy_.reset();
   }
+  DVLOG(1) << "XR foveation: ua_immersive_media="
+           << session_options_->is_ua_immersive_media
+           << " standard=" << standard_foveation_enabled_
+           << " eye_tracked=" << standard_foveation_eye_tracked_
+           << " fixed_legacy=" << foveation_fixed_center_
+           << " level=" << static_cast<int>(selected_foveation_level);
 
   // Make sure all of the objects we initialized are there.
   DCHECK(HasSession());
@@ -860,12 +910,118 @@ XrResult OpenXrApiWrapper::CreateSwapchain() {
     sample_count = 1;
   }
 #endif
-  RETURN_IF_XR_FAILED(
-      graphics_binding_->CreateBaseLayerSwapchain(session_, sample_count));
+  RETURN_IF_XR_FAILED(graphics_binding_->CreateBaseLayerSwapchain(
+      session_, sample_count, standard_foveation_enabled_));
 
   CreateSharedMailboxes();
 
   return XR_SUCCESS;
+}
+
+XrResult OpenXrApiWrapper::CreateStandardFoveationProfile(
+    OpenXrFoveationLevel level,
+    bool eye_tracked) {
+  CHECK(extension_helper_);
+  CHECK(HasSession());
+  const auto& methods = extension_helper_->ExtensionMethods();
+  if (!methods.xrCreateFoveationProfileFB) {
+    return XR_ERROR_FUNCTION_UNSUPPORTED;
+  }
+
+  XrFoveationEyeTrackedProfileCreateInfoMETA eye_info{
+      XR_TYPE_FOVEATION_EYE_TRACKED_PROFILE_CREATE_INFO_META};
+  XrFoveationLevelProfileCreateInfoFB level_info{
+      XR_TYPE_FOVEATION_LEVEL_PROFILE_CREATE_INFO_FB};
+  level_info.level = GetStandardFoveationLevel(level);
+  level_info.verticalOffset = 0.0f;
+  level_info.dynamic = XR_FOVEATION_DYNAMIC_DISABLED_FB;
+  if (eye_tracked) {
+    level_info.next = &eye_info;
+  }
+
+  XrFoveationProfileCreateInfoFB create_info{
+      XR_TYPE_FOVEATION_PROFILE_CREATE_INFO_FB};
+  create_info.next = &level_info;
+  return methods.xrCreateFoveationProfileFB(
+      session_, &create_info, &standard_foveation_profile_);
+}
+
+bool OpenXrApiWrapper::UpdateStandardFoveation() const {
+  if (!standard_foveation_enabled_ ||
+      standard_foveation_profile_ == XR_NULL_HANDLE || !extension_helper_ ||
+      !HasFrameState()) {
+    return false;
+  }
+
+  const auto& methods = extension_helper_->ExtensionMethods();
+  if (!methods.xrUpdateSwapchainFB ||
+      !methods.xrGetFoveationMetalStateMNDX) {
+    return false;
+  }
+
+  const XrSwapchain swapchain =
+      graphics_binding_->GetBaseLayerColorSwapchain();
+  if (swapchain == XR_NULL_HANDLE) {
+    return false;
+  }
+
+  XrSwapchainStateFoveationFB update{
+      XR_TYPE_SWAPCHAIN_STATE_FOVEATION_FB};
+  update.profile = standard_foveation_profile_;
+  if (XR_FAILED(methods.xrUpdateSwapchainFB(
+          swapchain,
+          reinterpret_cast<const XrSwapchainStateBaseHeaderFB*>(&update)))) {
+    return false;
+  }
+
+  const auto& properties = primary_view_config_.Properties();
+  if (properties.empty() ||
+      properties.size() > XR_FOVEATION_CENTER_SIZE_META) {
+    return false;
+  }
+
+  std::array<XrFoveationMetalViewMNDX, XR_FOVEATION_CENTER_SIZE_META>
+      packed_views{};
+  int32_t x_offset = primary_view_config_.Viewport().x();
+  for (size_t i = 0; i < properties.size(); ++i) {
+    packed_views[i].viewIndex = static_cast<uint32_t>(i);
+    packed_views[i].imageRect.offset = {x_offset, 0};
+    packed_views[i].imageRect.extent = {
+        static_cast<int32_t>(properties[i].Width()),
+        static_cast<int32_t>(properties[i].Height())};
+    x_offset += static_cast<int32_t>(properties[i].Width());
+  }
+
+  XrFoveationMetalPackedStateMNDX packed{
+      XR_TYPE_FOVEATION_METAL_PACKED_STATE_MNDX};
+  packed.viewCount = static_cast<uint32_t>(properties.size());
+  packed.views = packed_views.data();
+
+  XrFoveationMetalStateMNDX metal{XR_TYPE_FOVEATION_METAL_STATE_MNDX};
+  metal.next = &packed;
+  if (XR_FAILED(methods.xrGetFoveationMetalStateMNDX(
+          swapchain, 0, 0, &metal)) ||
+      metal.foveationEnabled != XR_TRUE ||
+      packed.horizontalSampleCount == 0 ||
+      packed.horizontalSampleCount >
+          XR_MNDX_FOVEATION_METAL_RATE_SAMPLE_COUNT ||
+      packed.verticalSampleCount != packed.horizontalSampleCount) {
+    return false;
+  }
+
+  OpenXrResolvedFoveationRateMap state;
+  state.logical_size =
+      graphics_binding_->GetProjectionLayerSwapchainImageSize();
+  state.physical_size =
+      gfx::Size(static_cast<int>(metal.physicalWidth),
+                static_cast<int>(metal.physicalHeight));
+  state.horizontal_rates.assign(
+      packed.horizontalSampleRates,
+      packed.horizontalSampleRates + packed.horizontalSampleCount);
+  state.vertical_rates.assign(
+      packed.verticalSampleRates,
+      packed.verticalSampleRates + packed.verticalSampleCount);
+  return graphics_binding_->ConfigureBaseLayerResolvedFoveation(state);
 }
 
 // Recomputes the size of the swapchain - the swapchain includes the primary
@@ -1594,6 +1750,13 @@ void OpenXrApiWrapper::UpdateFoveation() const {
   auto disable_foveation = [this]() {
     graphics_binding_->ClearBaseLayerFoveation();
   };
+
+  if (standard_foveation_enabled_) {
+    if (!UpdateStandardFoveation()) {
+      disable_foveation();
+    }
+    return;
+  }
 
   if (!foveation_policy_ || !HasFrameState() ||
       primary_view_config_.Views().empty()) {

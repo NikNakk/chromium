@@ -137,6 +137,8 @@ class OpenXrExtensionEnumeration {
   ~OpenXrExtensionEnumeration();
 
   bool ExtensionSupported(std::string_view extension_name) const;
+  bool ExtensionVersionAtLeast(std::string_view extension_name,
+                               uint32_t minimum_version) const;
 
  private:
   std::vector<XrExtensionProperties> extension_properties_;

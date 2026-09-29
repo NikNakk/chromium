@@ -156,6 +156,8 @@ class OpenXrGraphicsBinding {
   bool ConfigureBaseLayerFoveation(
       const OpenXrFoveationPolicy& policy,
       base::span<const gfx::PointF> target_centers);
+  bool ConfigureBaseLayerResolvedFoveation(
+      const OpenXrResolvedFoveationRateMap& state);
   void ClearBaseLayerFoveation();
 
   // Resizes the shared buffer for the given swapchain info if the transfer size
@@ -195,7 +197,10 @@ class OpenXrGraphicsBinding {
   // A few methods that only operate on the base layer.
 
   // Create the XrSwapchain and swapchain images for the base layer.
-  XrResult CreateBaseLayerSwapchain(XrSession session, uint32_t sample_count);
+  XrResult CreateBaseLayerSwapchain(XrSession session,
+                                    uint32_t sample_count,
+                                    bool foveation_capable = false);
+  XrSwapchain GetBaseLayerColorSwapchain() const;
 
   // Clears the list of images allocated during `CreateBaseLayerSwapchain` and
   // if a context_provider is provided and the Swapchain entries have had
@@ -335,6 +340,8 @@ class OpenXrGraphicsBinding {
   // bindings choose how the renderer process receives it.
   virtual bool PublishBaseLayerFoveation(
       const OpenXrFoveationTargetConfig& config);
+  virtual bool PublishBaseLayerResolvedFoveation(
+      const OpenXrResolvedFoveationRateMap& state);
   virtual void ClearPublishedBaseLayerFoveation();
 
   // Called when SetOverlayAndWebXrVisibility is called and the internal flags

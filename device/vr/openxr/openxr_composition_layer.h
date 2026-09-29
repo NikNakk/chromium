@@ -85,7 +85,9 @@ class OpenXrCompositionLayer {
   base::span<const OpenXrSwapchainInfo> GetSwapchainImages() const;
 
   // Create the XrSwapchain and swapchain images.
-  XrResult CreateSwapchain(XrSession session, uint32_t sample_count);
+  XrResult CreateSwapchain(XrSession session,
+                           uint32_t sample_count,
+                           bool foveation_capable = false);
 
   // Clears the list of images allocated during `CreateSwapchain` and
   // if a context_provider is provided and the Swapchain entries have had

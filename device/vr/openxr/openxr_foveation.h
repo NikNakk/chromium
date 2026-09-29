@@ -167,6 +167,13 @@ struct DEVICE_VR_EXPORT OpenXrFoveationTargetState {
   std::optional<OpenXrFoveationMapping> mapping;
 };
 
+struct DEVICE_VR_EXPORT OpenXrResolvedFoveationRateMap {
+  gfx::Size logical_size;
+  gfx::Size physical_size;
+  std::vector<float> horizontal_rates;
+  std::vector<float> vertical_rates;
+};
+
 // Chromium-facing backend boundary. Policy/gaze selection lives above this;
 // native graphics objects live strictly below it.
 class DEVICE_VR_EXPORT OpenXrFoveationBackend {

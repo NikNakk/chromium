@@ -172,6 +172,9 @@ class OpenXrApiWrapper {
   XrResult CreateSession();
 
   XrResult CreateSwapchain();
+  XrResult CreateStandardFoveationProfile(OpenXrFoveationLevel level,
+                                          bool eye_tracked);
+  bool UpdateStandardFoveation() const;
   bool RecomputeSwapchainSizeAndViewports();
   XrResult CreateSpace(XrReferenceSpaceType type, XrSpace* space);
 
@@ -221,8 +224,11 @@ class OpenXrApiWrapper {
 
   std::unique_ptr<OpenXRInputHelper> input_helper_;
   std::optional<OpenXrFoveationPolicy> foveation_policy_;
-  // Diagnostic fixed foveation keeps the foveal centre on each view's optical
-  // axis. It is only set for browser-owned immersive-media sessions.
+  // Registered FB/META path: policy and gaze are resolved by the runtime.
+  bool standard_foveation_enabled_ = false;
+  bool standard_foveation_eye_tracked_ = false;
+  XrFoveationProfileFB standard_foveation_profile_ = XR_NULL_HANDLE;
+  // Legacy diagnostic fixed mode keeps the centre on each view's optical axis.
   bool foveation_fixed_center_ = false;
 
   // OpenXR objects

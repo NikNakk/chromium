@@ -108,6 +108,18 @@ bool OpenXrExtensionEnumeration::ExtensionSupported(
       });
 }
 
+bool OpenXrExtensionEnumeration::ExtensionVersionAtLeast(
+    std::string_view extension_name,
+    uint32_t minimum_version) const {
+  return std::ranges::any_of(
+      extension_properties_,
+      [&extension_name, minimum_version](
+          const XrExtensionProperties& properties) {
+        return std::string_view(properties.extensionName) == extension_name &&
+               properties.extensionVersion >= minimum_version;
+      });
+}
+
 // static
 std::vector<const char*>
 OpenXrExtensionHelper::GetRequiredExtensionsForLayers() {
@@ -253,7 +265,8 @@ bool OpenXrExtensionHelper::SupportsStandardFoveation() const {
   return IsExtensionSupported(XR_FB_SWAPCHAIN_UPDATE_STATE_EXTENSION_NAME) &&
          IsExtensionSupported(XR_FB_FOVEATION_EXTENSION_NAME) &&
          IsExtensionSupported(XR_FB_FOVEATION_CONFIGURATION_EXTENSION_NAME) &&
-         IsExtensionSupported(XR_MNDX_FOVEATION_METAL_EXTENSION_NAME) &&
+         extension_enumeration_->ExtensionVersionAtLeast(
+             XR_MNDX_FOVEATION_METAL_EXTENSION_NAME, 2) &&
          extension_methods_.xrCreateFoveationProfileFB &&
          extension_methods_.xrDestroyFoveationProfileFB &&
          extension_methods_.xrUpdateSwapchainFB &&
