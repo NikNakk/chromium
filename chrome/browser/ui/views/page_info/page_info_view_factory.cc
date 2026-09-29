@@ -513,6 +513,15 @@ const ui::ImageModel PageInfoViewFactory::GetPermissionIcon(
                                         ? vector_icons::kHandGestureIcon
                                         : vector_icons::kHandGestureOldIcon);
       break;
+    case ContentSettingsType::EYE_TRACKING:
+      icon = show_blocked_badge
+                 ? &(features::IsRoundedIconsEnabled()
+                         ? vector_icons::kCardboardOffIcon
+                         : vector_icons::kVrHeadsetOffChromeRefreshOldIcon)
+                 : &(features::IsRoundedIconsEnabled()
+                         ? vector_icons::kCardboardIcon
+                         : vector_icons::kVrHeadsetChromeRefreshOldIcon);
+      break;
     case ContentSettingsType::AR:
       icon = show_blocked_badge
                  ? &(features::IsRoundedIconsEnabled()
@@ -750,6 +759,11 @@ const ui::ImageModel PageInfoViewFactory::GetPermissionIcon(
       icon = &(features::IsRoundedIconsEnabled()
                    ? vector_icons::kHandGestureIcon
                    : vector_icons::kHandGestureOldIcon);
+      break;
+    case ContentSettingsType::EYE_TRACKING:
+      icon = &(features::IsRoundedIconsEnabled()
+                   ? vector_icons::kCardboardFilledIcon
+                   : vector_icons::kVrHeadsetOldIcon);
       break;
     case ContentSettingsType::WINDOW_MANAGEMENT:
       icon = &(features::IsRoundedIconsEnabled()

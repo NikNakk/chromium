@@ -76,6 +76,8 @@ std::string GetPermissionString(PermissionType permission) {
       return "AR";
     case PermissionType::HAND_TRACKING:
       return "HandTracking";
+    case PermissionType::EYE_TRACKING:
+      return "EyeTracking";
     case PermissionType::SMART_CARD:
       return "SmartCard";
     case PermissionType::STORAGE_ACCESS_GRANT:
@@ -143,6 +145,7 @@ PermissionTypeToPermissionsPolicyFeature(PermissionType permission) {
     case PermissionType::WAKE_LOCK_SCREEN:
       return network::mojom::PermissionsPolicyFeature::kScreenWakeLock;
     case PermissionType::HAND_TRACKING:
+    case PermissionType::EYE_TRACKING:
       return network::mojom::PermissionsPolicyFeature::kWebXr;
     case PermissionType::VR:
       return network::mojom::PermissionsPolicyFeature::kWebXr;
@@ -364,6 +367,8 @@ std::optional<PermissionType> PermissionDescriptorInfoToPermissionType(
       return PermissionType::AR;
     case PermissionName::HAND_TRACKING:
       return PermissionType::HAND_TRACKING;
+    case PermissionName::EYE_TRACKING:
+      return PermissionType::EYE_TRACKING;
     case PermissionName::WEB_PRINTING:
       return PermissionType::WEB_PRINTING;
     case PermissionName::SMART_CARD:

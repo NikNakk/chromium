@@ -493,5 +493,10 @@ enum ContentSettingsType {
 
   // Stores allowlist decisions for Suspicious Site Warnings.
   SUSPICIOUS_SITE_WARNING_DATA,
+
+  // Whether a site may use eye-tracking data for privacy-sensitive WebXR
+  // features. Dynamic foveation consumes gaze inside the XR process and does
+  // not expose gaze coordinates to the page.
+  EYE_TRACKING,
 };
 // LINT.ThenChange(//components/content_settings/core/common/content_settings_uma_constants.h:kContentSettingsTypeToHistogramValue)

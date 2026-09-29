@@ -167,6 +167,8 @@ RequestTypeForUma PermissionUtil::GetUmaValueForRequestType(
       }
     case RequestType::kHandTracking:
       return RequestTypeForUma::PERMISSION_HAND_TRACKING;
+    case RequestType::kEyeTracking:
+      return RequestTypeForUma::PERMISSION_EYE_TRACKING;
     case RequestType::kIdleDetection:
       return RequestTypeForUma::PERMISSION_IDLE_DETECTION;
 #if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
@@ -325,6 +327,9 @@ bool PermissionUtil::GetPermissionType(ContentSettingsType type,
       break;
     case ContentSettingsType::HAND_TRACKING:
       *out = PermissionType::HAND_TRACKING;
+      break;
+    case ContentSettingsType::EYE_TRACKING:
+      *out = PermissionType::EYE_TRACKING;
       break;
     case ContentSettingsType::SMART_CARD_DATA:
       *out = PermissionType::SMART_CARD;
@@ -546,6 +551,8 @@ ContentSettingsType PermissionUtil::PermissionTypeToContentSettingsTypeSafe(
       return ContentSettingsType::NFC;
     case PermissionType::HAND_TRACKING:
       return ContentSettingsType::HAND_TRACKING;
+    case PermissionType::EYE_TRACKING:
+      return ContentSettingsType::EYE_TRACKING;
     case PermissionType::VR:
       return ContentSettingsType::VR;
     case PermissionType::AR:

@@ -69,6 +69,9 @@ enum class PermissionType {
   LOCAL_NETWORK = 44,
   LOOPBACK_NETWORK = 45,
   GEOLOCATION_APPROXIMATE = 46,
+  // Permission to use eye-tracking data internally for privacy-sensitive XR
+  // features such as gaze-driven dynamic foveation.
+  EYE_TRACKING = 47,
 
   // Always keep this at the end.
   NUM,

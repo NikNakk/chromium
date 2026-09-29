@@ -141,6 +141,7 @@ chromium-metrics-reviews@google.com.
   <variant name=".GeolocationUpgrade"
       summary="Geolocation permission (upgrade permission prompt from
                approximate to precise)"/>
+  <variant name=".EyeTracking" summary="Eye tracking permission"/>
   <variant name=".HandTracking" summary="Hand tracking permission"/>
   <variant name=".IdentityProvider" summary="Identity Provider permission"/>
   <variant name=".IdleDetection" summary="Idle detection permission"/>

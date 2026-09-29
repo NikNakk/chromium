@@ -168,6 +168,9 @@ content::PermissionDescriptorUtil::CreatePermissionDescriptorForPermissionType(
     case blink::PermissionType::HAND_TRACKING:
       return CreatePermissionDescriptor(
           blink::mojom::PermissionName::HAND_TRACKING);
+    case blink::PermissionType::EYE_TRACKING:
+      return CreatePermissionDescriptor(
+          blink::mojom::PermissionName::EYE_TRACKING);
     case blink::PermissionType::WEB_APP_INSTALLATION:
       return CreatePermissionDescriptor(
           blink::mojom::PermissionName::WEB_APP_INSTALLATION);

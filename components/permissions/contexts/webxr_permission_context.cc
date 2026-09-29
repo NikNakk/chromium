@@ -40,7 +40,8 @@ WebXrPermissionContext::WebXrPermissionContext(
       content_settings_type_(content_settings_type) {
   DCHECK(content_settings_type_ == ContentSettingsType::VR ||
          content_settings_type_ == ContentSettingsType::AR ||
-         content_settings_type_ == ContentSettingsType::HAND_TRACKING);
+         content_settings_type_ == ContentSettingsType::HAND_TRACKING ||
+         content_settings_type_ == ContentSettingsType::EYE_TRACKING);
 }
 
 WebXrPermissionContext::~WebXrPermissionContext() = default;

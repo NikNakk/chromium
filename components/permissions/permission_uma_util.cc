@@ -671,6 +671,8 @@ std::string GetPermissionStringForUma(
       return "AR";
     case ContentSettingsType::HAND_TRACKING:
       return "HandTracking";
+    case ContentSettingsType::EYE_TRACKING:
+      return "EyeTracking";
     case ContentSettingsType::STORAGE_ACCESS:
       return "StorageAccess";
     case ContentSettingsType::TOP_LEVEL_STORAGE_ACCESS:

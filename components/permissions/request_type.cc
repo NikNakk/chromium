@@ -45,6 +45,8 @@ int GetIconIdAndroid(RequestType type) {
       NOTREACHED();
     case RequestType::kGeolocation:
       return IDR_ANDROID_INFOBAR_GEOLOCATION;
+    case RequestType::kEyeTracking:
+      return IDR_ANDROID_INFOBAR_VR_HEADSET;
     case RequestType::kHandTracking:
       return IDR_ANDROID_INFOBAR_HAND_TRACKING;
     case RequestType::kIdentityProvider:
@@ -111,6 +113,10 @@ const gfx::VectorIcon& GetIconIdDesktop(RequestType type) {
       return ::features::IsRoundedIconsEnabled()
                  ? vector_icons::kLocationOnIcon
                  : vector_icons::kLocationOnChromeRefreshOldIcon;
+    case RequestType::kEyeTracking:
+      return ::features::IsRoundedIconsEnabled()
+                 ? vector_icons::kCardboardIcon
+                 : vector_icons::kVrHeadsetChromeRefreshOldIcon;
     case RequestType::kHandTracking:
       return ::features::IsRoundedIconsEnabled()
                  ? vector_icons::kHandGestureIcon
@@ -232,6 +238,10 @@ const gfx::VectorIcon& GetBlockedIconIdDesktop(RequestType type) {
       return ::features::IsRoundedIconsEnabled()
                  ? vector_icons::kContentPasteOffIcon
                  : vector_icons::kContentPasteOffOldIcon;
+    case RequestType::kEyeTracking:
+      return ::features::IsRoundedIconsEnabled()
+                 ? vector_icons::kCardboardOffIcon
+                 : vector_icons::kVrHeadsetOffChromeRefreshOldIcon;
     case RequestType::kHandTracking:
       return ::features::IsRoundedIconsEnabled()
                  ? vector_icons::kHandGestureOffIcon
@@ -311,6 +321,8 @@ std::optional<RequestType> ContentSettingsTypeToRequestTypeIfExists(
     case ContentSettingsType::GEOLOCATION:
     case ContentSettingsType::GEOLOCATION_WITH_OPTIONS:
       return RequestType::kGeolocation;
+    case ContentSettingsType::EYE_TRACKING:
+      return RequestType::kEyeTracking;
     case ContentSettingsType::HAND_TRACKING:
       return RequestType::kHandTracking;
     case ContentSettingsType::IDLE_DETECTION:
@@ -407,6 +419,8 @@ std::optional<ContentSettingsType> RequestTypeToContentSettingsType(
       return ContentSettingsType::LOOPBACK_NETWORK;
     case RequestType::kGeolocation:
       return content_settings::GeolocationContentSettingsType();
+    case RequestType::kEyeTracking:
+      return ContentSettingsType::EYE_TRACKING;
     case RequestType::kHandTracking:
       return ContentSettingsType::HAND_TRACKING;
     case RequestType::kIdleDetection:
@@ -527,6 +541,8 @@ const char* PermissionKeyForRequestType(permissions::RequestType request_type) {
       return "file_system";
     case permissions::RequestType::kGeolocation:
       return "geolocation";
+    case permissions::RequestType::kEyeTracking:
+      return "eye_tracking";
     case permissions::RequestType::kHandTracking:
       return "hand_tracking";
     case permissions::RequestType::kIdleDetection:

@@ -48,6 +48,7 @@ std::string_view ToString(permissions::RequestType request_type) {
           {RequestType::kClipboard, "Clipboard"},
           {RequestType::kTopLevelStorageAccess, "TopLevelStorageAccess"},
           {RequestType::kDiskQuota, "DiskQuota"},
+          {RequestType::kEyeTracking, "EyeTracking"},
           {RequestType::kFileSystemAccess, "FileSystemAccess"},
           {RequestType::kGeolocation, "Geolocation"},
           {RequestType::kHandTracking, "HandTracking"},

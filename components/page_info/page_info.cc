@@ -149,6 +149,7 @@ ContentSettingsType kPermissionType[] = {
     ContentSettingsType::BLUETOOTH_GUARD,
     ContentSettingsType::BLUETOOTH_SCANNING,
     ContentSettingsType::HAND_TRACKING,
+    ContentSettingsType::EYE_TRACKING,
     ContentSettingsType::VR,
     ContentSettingsType::AR,
     ContentSettingsType::IDLE_DETECTION,

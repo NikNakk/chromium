@@ -31,6 +31,7 @@ enum class RequestType {
   kClipboard,
   kTopLevelStorageAccess,
   kDiskQuota,
+  kEyeTracking,
   kFileSystemAccess,
   kGeolocation,
   kHandTracking,

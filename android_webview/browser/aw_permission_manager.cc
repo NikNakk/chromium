@@ -403,6 +403,7 @@ void AwPermissionManager::RequestPermissionsFromCurrentDocument(
       case PermissionType::VR:
       case PermissionType::AR:
       case PermissionType::HAND_TRACKING:
+      case PermissionType::EYE_TRACKING:
       case PermissionType::CAMERA_PAN_TILT_ZOOM:
       case PermissionType::WINDOW_MANAGEMENT:
       case PermissionType::LOCAL_FONTS:
@@ -581,6 +582,7 @@ PermissionStatus AwPermissionManager::GetPermissionStatusInternal(
     case blink::PermissionType::DISPLAY_CAPTURE:
     case blink::PermissionType::PERSISTENT_STORAGE:
     case blink::PermissionType::HAND_TRACKING:
+    case blink::PermissionType::EYE_TRACKING:
     case blink::PermissionType::IDLE_DETECTION:
     case blink::PermissionType::KEYBOARD_LOCK:
     case blink::PermissionType::LOCAL_FONTS:
@@ -747,6 +749,7 @@ void AwPermissionManager::CancelPermissionRequest(int request_id) {
       case PermissionType::PERIODIC_BACKGROUND_SYNC:
       case PermissionType::NFC:
       case PermissionType::HAND_TRACKING:
+      case PermissionType::EYE_TRACKING:
       case PermissionType::VR:
       case PermissionType::AR:
       case PermissionType::STORAGE_ACCESS_GRANT:

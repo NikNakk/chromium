@@ -117,6 +117,9 @@ CreateDefaultPermissionContexts(content::BrowserContext* browser_context,
         std::make_unique<permissions::WebXrPermissionContext>(
             browser_context, ContentSettingsType::HAND_TRACKING);
   }
+  permission_contexts[ContentSettingsType::EYE_TRACKING] =
+      std::make_unique<permissions::WebXrPermissionContext>(
+          browser_context, ContentSettingsType::EYE_TRACKING);
 #endif
   permission_contexts[ContentSettingsType::KEYBOARD_LOCK] =
       std::make_unique<permissions::KeyboardLockPermissionContext>(

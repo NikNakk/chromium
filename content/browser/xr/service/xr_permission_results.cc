@@ -95,6 +95,9 @@ std::optional<blink::PermissionType> XrPermissionResults::GetPermissionFor(
   if (feature == device::mojom::XRSessionFeature::HAND_INPUT) {
     return blink::PermissionType::HAND_TRACKING;
   }
+  if (feature == device::mojom::XRSessionFeature::DYNAMIC_FOVEATION) {
+    return blink::PermissionType::EYE_TRACKING;
+  }
 
   return std::nullopt;
 }

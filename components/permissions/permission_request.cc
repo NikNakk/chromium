@@ -102,6 +102,9 @@ PermissionRequest::GetDialogAnnotatedMessageText(
       NOTREACHED();
     case RequestType::kFileSystemAccess:
       NOTREACHED();
+    case RequestType::kEyeTracking:
+      message_id = IDS_EYE_TRACKING_INFOBAR_TEXT;
+      break;
     case RequestType::kHandTracking:
       message_id = IDS_HAND_TRACKING_INFOBAR_TEXT;
       break;
@@ -298,6 +301,15 @@ std::optional<std::u16string> PermissionRequest::GetRequestChipText(
          IDS_PERMISSIONS_HAND_TRACKING_ALLOWED_CONFIRMATION_SCREENREADER_ANNOUNCEMENT,
          IDS_PERMISSIONS_HAND_TRACKING_ALLOWED_ONCE_CONFIRMATION_SCREENREADER_ANNOUNCEMENT,
          IDS_PERMISSIONS_HAND_TRACKING_NOT_ALLOWED_CONFIRMATION_SCREENREADER_ANNOUNCEMENT}},
+       {RequestType::kEyeTracking,
+        {IDS_EYE_TRACKING_PERMISSION_CHIP,
+         IDS_EYE_TRACKING_PERMISSION_BLOCKED_CHIP,
+         IDS_PERMISSIONS_PERMISSION_ALLOWED_CONFIRMATION,
+         IDS_PERMISSIONS_PERMISSION_ALLOWED_ONCE_CONFIRMATION,
+         IDS_PERMISSIONS_PERMISSION_NOT_ALLOWED_CONFIRMATION,
+         IDS_PERMISSIONS_EYE_TRACKING_ALLOWED_CONFIRMATION_SCREENREADER_ANNOUNCEMENT,
+         IDS_PERMISSIONS_EYE_TRACKING_ALLOWED_ONCE_CONFIRMATION_SCREENREADER_ANNOUNCEMENT,
+         IDS_PERMISSIONS_EYE_TRACKING_NOT_ALLOWED_CONFIRMATION_SCREENREADER_ANNOUNCEMENT}},
        {RequestType::kIdleDetection,
         {IDS_IDLE_DETECTION_PERMISSION_CHIP, -1, -1, -1, -1, -1, -1, -1}},
        {RequestType::kKeyboardLock,
@@ -408,6 +420,9 @@ std::u16string PermissionRequest::GetMessageTextFragment() const {
       break;
     case RequestType::kGeolocation:
       message_id = IDS_GEOLOCATION_INFOBAR_PERMISSION_FRAGMENT;
+      break;
+    case RequestType::kEyeTracking:
+      message_id = IDS_EYE_TRACKING_PERMISSION_FRAGMENT;
       break;
     case RequestType::kHandTracking:
       message_id = IDS_HAND_TRACKING_PERMISSION_FRAGMENT;

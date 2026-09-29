@@ -60,6 +60,7 @@ bool IsAllowlistedPermissionType(PermissionType permission) {
     case PermissionType::NUM:
     case PermissionType::WAKE_LOCK_SYSTEM:
     case PermissionType::HAND_TRACKING:
+    case PermissionType::EYE_TRACKING:
     case PermissionType::VR:
     case PermissionType::AR:
     case PermissionType::STORAGE_ACCESS_GRANT:
