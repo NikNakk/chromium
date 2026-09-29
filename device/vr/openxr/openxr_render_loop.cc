@@ -228,12 +228,6 @@ void OpenXrRenderLoop::RequestSession(
   presentation_receiver_.reset();
   frame_data_receiver_.reset();
   is_ua_immersive_media_session_ = options->is_ua_immersive_media;
-  dynamic_foveation_enabled_ =
-      options->is_ua_immersive_media ||
-      std::ranges::contains(options->required_features,
-                            mojom::XRSessionFeature::DYNAMIC_FOVEATION) ||
-      std::ranges::contains(options->optional_features,
-                            mojom::XRSessionFeature::DYNAMIC_FOVEATION);
   request_session_callback_ =
       base::BindPostTask(main_thread_task_runner_, std::move(callback));
 
@@ -760,7 +754,8 @@ mojom::XRFrameDataPtr OpenXrRenderLoop::GetNextFrameData() {
     // internally; page WebXR must explicitly request "dynamic-foveation".
     // UpdateFoveation() keeps the gaze pose in the XR process.
     frame_data->input_state = openxr_->GetInputState();
-    if (dynamic_foveation_enabled_) {
+    if (is_ua_immersive_media_session_ ||
+        openxr_->IsFeatureEnabled(mojom::XRSessionFeature::DYNAMIC_FOVEATION)) {
       openxr_->UpdateFoveation();
     }
   }

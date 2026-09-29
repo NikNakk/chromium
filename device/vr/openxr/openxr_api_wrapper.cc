@@ -585,6 +585,14 @@ XrResult OpenXrApiWrapper::EnableSupportedFeatures(
         is_enabled = true;
         break;
 
+      case mojom::XRSessionFeature::DYNAMIC_FOVEATION:
+        // The feature is enabled only if the OpenXR profile was obtained and
+        // the active graphics binding actually created a foveation backend.
+        // This keeps optional-feature reporting honest on unsupported backends.
+        is_enabled = foveation_policy_.has_value() &&
+                     graphics_binding_->SupportsDynamicFoveation();
+        break;
+
       case mojom::XRSessionFeature::REF_SPACE_VIEWER:
       case mojom::XRSessionFeature::REF_SPACE_LOCAL:
         // Supported by the core spec with no special additional features

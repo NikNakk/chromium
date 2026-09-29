@@ -168,10 +168,10 @@ class OpenXrGraphicsBinding {
   // OpenXR. Does not affect the API used for compositing.
   bool IsWebGPUSession() const { return webgpu_session_; }
 
-  // True only for browser-owned sessions that are allowed to use internal
-  // eye-gaze data to drive foveation.
-  bool IsDynamicFoveationAllowed() const {
-    return dynamic_foveation_allowed_;
+  // True when this session is allowed to use dynamic foveation and the active
+  // graphics backend actually has an implementation for it.
+  bool SupportsDynamicFoveation() const {
+    return dynamic_foveation_allowed_ && foveation_backend_ != nullptr;
   }
 
   // If the layer should be flipped, return a pointer to the
