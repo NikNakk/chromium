@@ -127,6 +127,11 @@ OpenXrExtensionHelper::OpenXrExtensionHelper(
   // General methods
   OPENXR_LOAD_FN(xrPollFutureEXT);
   OPENXR_LOAD_FN(xrGetFoveationProfileMNDX);
+  OPENXR_LOAD_FN(xrCreateFoveationProfileFB);
+  OPENXR_LOAD_FN(xrDestroyFoveationProfileFB);
+  OPENXR_LOAD_FN(xrUpdateSwapchainFB);
+  OPENXR_LOAD_FN(xrGetFoveationEyeTrackedStateMETA);
+  OPENXR_LOAD_FN(xrGetFoveationMetalStateMNDX);
 
   // Hand tracking methods
   OPENXR_LOAD_FN(xrCreateHandTrackerEXT);
@@ -233,13 +238,32 @@ bool OpenXrExtensionHelper::IsFeatureSupported(
                                    return IsExtensionSupported(extension);
                                  });
     case device::mojom::XRSessionFeature::DYNAMIC_FOVEATION:
-      return IsExtensionSupported(XR_EXT_EYE_GAZE_INTERACTION_EXTENSION_NAME) &&
-             IsExtensionSupported(XR_MNDX_FOVEATION_EXTENSION_NAME);
+      return SupportsStandardEyeTrackedFoveation() ||
+             (IsExtensionSupported(
+                  XR_EXT_EYE_GAZE_INTERACTION_EXTENSION_NAME) &&
+              IsExtensionSupported(XR_MNDX_FOVEATION_EXTENSION_NAME));
     default:
       // By default we assume a feature doesn't need to be supported by an
       // extension unless customized above.
       return true;
   }
+}
+
+bool OpenXrExtensionHelper::SupportsStandardFoveation() const {
+  return IsExtensionSupported(XR_FB_SWAPCHAIN_UPDATE_STATE_EXTENSION_NAME) &&
+         IsExtensionSupported(XR_FB_FOVEATION_EXTENSION_NAME) &&
+         IsExtensionSupported(XR_FB_FOVEATION_CONFIGURATION_EXTENSION_NAME) &&
+         IsExtensionSupported(XR_MNDX_FOVEATION_METAL_EXTENSION_NAME) &&
+         extension_methods_.xrCreateFoveationProfileFB &&
+         extension_methods_.xrDestroyFoveationProfileFB &&
+         extension_methods_.xrUpdateSwapchainFB &&
+         extension_methods_.xrGetFoveationMetalStateMNDX;
+}
+
+bool OpenXrExtensionHelper::SupportsStandardEyeTrackedFoveation() const {
+  return SupportsStandardFoveation() &&
+         IsExtensionSupported(XR_META_FOVEATION_EYE_TRACKED_EXTENSION_NAME) &&
+         extension_methods_.xrGetFoveationEyeTrackedStateMETA;
 }
 
 std::optional<OpenXrFoveationPolicy>

@@ -73,6 +73,54 @@ typedef XrResult(XRAPI_PTR* PFN_xrGetFoveationProfileMNDX)(
     XrFoveationProfileMNDX* profile);
 #endif
 
+// Experimental graphics transport companion for standard XR_FB_foveation.
+// Policy and eye-tracked semantics remain owned by FB/META; this only exposes
+// the Metal rendering state needed by clients using XR_KHR_metal_enable.
+#ifndef XR_MNDX_foveation_metal
+#define XR_MNDX_foveation_metal 1
+#define XR_MNDX_foveation_metal_SPEC_VERSION 2
+#define XR_MNDX_FOVEATION_METAL_EXTENSION_NAME "XR_MNDX_foveation_metal"
+#define XR_MNDX_FOVEATION_METAL_RATE_SAMPLE_COUNT 16
+#define XR_MNDX_FOVEATION_METAL_MAP_BOUNDARY_COUNT 129
+#define XR_TYPE_FOVEATION_METAL_STATE_MNDX ((XrStructureType)0x7fff5057)
+#define XR_TYPE_FOVEATION_METAL_PACKED_STATE_MNDX   ((XrStructureType)0x7fff5058)
+
+typedef struct XrFoveationMetalStateMNDX {
+  XrStructureType type;
+  RAW_PTR_EXCLUSION void* next;
+  XrBool32 foveationEnabled;
+  RAW_PTR_EXCLUSION void* rasterizationRateMap;
+  uint32_t physicalWidth;
+  uint32_t physicalHeight;
+  uint32_t revision;
+} XrFoveationMetalStateMNDX;
+
+typedef struct XrFoveationMetalViewMNDX {
+  uint32_t viewIndex;
+  XrRect2Di imageRect;
+} XrFoveationMetalViewMNDX;
+
+typedef struct XrFoveationMetalPackedStateMNDX {
+  XrStructureType type;
+  RAW_PTR_EXCLUSION void* next;
+  uint32_t viewCount;
+  RAW_PTR_EXCLUSION const XrFoveationMetalViewMNDX* views;
+  uint32_t horizontalSampleCount;
+  uint32_t verticalSampleCount;
+  float horizontalSampleRates[XR_MNDX_FOVEATION_METAL_RATE_SAMPLE_COUNT];
+  float verticalSampleRates[XR_MNDX_FOVEATION_METAL_RATE_SAMPLE_COUNT];
+  uint32_t boundaryCount;
+  float x[XR_MNDX_FOVEATION_METAL_MAP_BOUNDARY_COUNT];
+  float y[XR_MNDX_FOVEATION_METAL_MAP_BOUNDARY_COUNT];
+} XrFoveationMetalPackedStateMNDX;
+
+typedef XrResult(XRAPI_PTR* PFN_xrGetFoveationMetalStateMNDX)(
+    XrSwapchain swapchain,
+    uint32_t viewIndex,
+    uint32_t arrayLayer,
+    XrFoveationMetalStateMNDX* state);
+#endif
+
 namespace device {
 
 inline constexpr size_t kOpenXrFoveationMapBoundaryCount =

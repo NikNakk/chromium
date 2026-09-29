@@ -21,6 +21,12 @@ namespace device {
 // static
 std::vector<std::string> OpenXrGraphicsBinding::GetOptionalExtensions() {
   return {XR_FB_COMPOSITION_LAYER_IMAGE_LAYOUT_EXTENSION_NAME,
+          XR_FB_SWAPCHAIN_UPDATE_STATE_EXTENSION_NAME,
+          XR_FB_FOVEATION_EXTENSION_NAME,
+          XR_FB_FOVEATION_CONFIGURATION_EXTENSION_NAME,
+          XR_META_FOVEATION_EYE_TRACKED_EXTENSION_NAME,
+          XR_MNDX_FOVEATION_METAL_EXTENSION_NAME,
+          // Legacy policy/map extension kept as a compatibility fallback.
           XR_MNDX_FOVEATION_EXTENSION_NAME};
 }
 
