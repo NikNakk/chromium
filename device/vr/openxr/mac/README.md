@@ -189,6 +189,25 @@ profile (1.0 centre / 0.5 middle / 0.25 periphery on the current Monado
 implementation). If gaze is unavailable, Chromium removes both the renderer
 metadata and compositor mapping rather than reusing an old gaze position.
 
+For browser-owned immersive-video diagnostics, the same build can now be
+launched in three modes:
+
+```sh
+--xr-foveation-mode=off
+--xr-foveation-mode=fixed --xr-foveation-level=2
+--xr-foveation-mode=dynamic --xr-foveation-level=2
+```
+
+`--xr-foveation-level` accepts 0-5 and maps to Reference, Strong,
+Aggressive, AggressivePlus, NearExtreme, and Extreme respectively. If omitted,
+the level remains 2 (Aggressive). These switches apply only to UA-owned
+immersive media; page-created WebXR still requires the explicit
+`"dynamic-foveation"` session feature and its eye-tracking permission.
+
+`fixed` projects the optical axis into each eye's actual OpenXR FOV, so an
+asymmetric view does not incorrectly assume that the foveal point is texture
+centre. It does not create or synchronize the eye-gaze action.
+
 The Metal backend quantizes the packed target to a 16x16 rate grid and caches
 rate maps across frames. The matching dense 129-sample mapping is submitted
 with the projection pixels that were actually rendered, including sparse-frame
