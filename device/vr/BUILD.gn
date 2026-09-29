@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import("//device/vr/buildflags/buildflags.gni")
+import("//testing/libfuzzer/fuzzer_test.gni")
 
 if (is_android) {
   import("//build/config/android/config.gni")
@@ -437,6 +438,20 @@ if (enable_openxr) {
   # the OpenXR loader instead looks for the path to the OpenXR runtime in the
   # json file instead of the registry key. This json file copied to the output
   # folder points to our mock OpenXR runtime.
+  if (enable_openxr) {
+    fuzzer_test("spherical_video_mesh_parser_fuzzer") {
+      sources = [
+        "openxr/spherical_video_mesh_parser.cc",
+        "openxr/spherical_video_mesh_parser_fuzzer.cc",
+      ]
+
+      deps = [
+        "//base",
+        "//third_party/zlib",
+      ]
+    }
+  }
+
   if (is_win || is_android || is_linux) {
     copy("json_mock") {
       sources = []

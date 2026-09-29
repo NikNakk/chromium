@@ -26,7 +26,6 @@ import sys
 
 EXPECTED_ANGLE_REVISION = "2bb28bbcef760ede0c084f4cf3341f495887f1f5"
 MARKER = "org.chromium.openxr.metal-foveation-v1"
-XR_TEXTURE_LABEL = "ChromiumOpenXrFoveated"
 
 
 TEXTURE_HEADER_OLD = r"""    angle::Result bindTexImage(const gl::Context *context, egl::Surface *surface) override;

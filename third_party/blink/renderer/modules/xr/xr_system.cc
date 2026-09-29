@@ -133,6 +133,11 @@ ImmersiveMediaSpatialFormat GetImmersiveMediaSpatialFormat(
 
   result.spatial_format = video->GetWebMediaPlayer()->GetSpatialFormat();
 
+  // EXPERIMENTAL: data-xr-projection is a branch-local, web-facing hint for
+  // browser-owned immersive playback. It is only consulted by the
+  // kImmersiveVideoPlaybackViaOpenXr path (disabled by default) and is not a
+  // standardized WebXR or HTML media API. Prefer container/decoder projection
+  // metadata whenever it is available.
   const AtomicString projection =
       video->getAttribute(AtomicString("data-xr-projection"));
 
@@ -170,7 +175,7 @@ ImmersiveMediaSpatialFormat GetImmersiveMediaSpatialFormat(
         media::VideoProjectionType::kEquirect360;
     result.spatial_format.stereo_mode = media::VideoStereoMode::kMono;
     result.needs_eac_reprojection = true;
-    LOG(INFO) << "Immersive media: legacy YouTube EAC fallback selected";
+    DVLOG(1) << "Immersive media: legacy YouTube EAC fallback selected";
     return result;
   }
 
@@ -1380,7 +1385,7 @@ XREquirectLayer* XRSystem::CreateImmersiveMediaLayer(
       BindRepeating(&XRSystem::ScheduleImmersiveMediaLayerResize,
                     WrapWeakPersistent(this)));
 
-  LOG(INFO) << "Immersive media layer: format="
+  DVLOG(1) << "Immersive media layer: format="
             << spatial_format.ToString()
             << " needs_eac_reprojection="
             << immersive_format.needs_eac_reprojection
