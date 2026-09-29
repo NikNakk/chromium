@@ -1001,27 +1001,44 @@ bool OpenXrApiWrapper::UpdateStandardFoveation() const {
     return false;
   }
 
-  const auto& properties = primary_view_config_.Properties();
-  if (properties.empty() ||
-      properties.size() > XR_FOVEATION_CENTER_SIZE_META) {
+  // Only the primary views are foveated. Active secondary views share the
+  // packed texture but have no foveal centre, so they would be rasterized at
+  // the peripheral rate; render unfoveated instead.
+  for (const auto& [type, secondary_view_config] : secondary_view_configs_) {
+    if (secondary_view_config.Active()) {
+      return false;
+    }
+  }
+
+  // Describe exactly the rectangles this frame will submit, from the same
+  // code that builds XrCompositionLayerProjectionView::subImage.imageRect.
+  const std::vector<XrRect2Di> image_rects =
+      graphics_binding_->GetBaseLayerSubmittedImageRects(primary_view_config_);
+  if (image_rects.empty() ||
+      image_rects.size() > XR_FOVEATION_CENTER_SIZE_META) {
     return false;
   }
 
   std::array<XrFoveationMetalViewMNDX, XR_FOVEATION_CENTER_SIZE_META>
       packed_views{};
-  int32_t x_offset = primary_view_config_.Viewport().x();
-  for (size_t i = 0; i < properties.size(); ++i) {
+  for (size_t i = 0; i < image_rects.size(); ++i) {
     packed_views[i].viewIndex = static_cast<uint32_t>(i);
-    packed_views[i].imageRect.offset = {x_offset, 0};
-    packed_views[i].imageRect.extent = {
-        static_cast<int32_t>(properties[i].Width()),
-        static_cast<int32_t>(properties[i].Height())};
-    x_offset += static_cast<int32_t>(properties[i].Width());
+    packed_views[i].imageRect = image_rects[i];
   }
+
+  // WebGL content is stored GL-style (bottom-up) in the Metal texture and
+  // submitted with a vertical flip; the runtime must mirror each view's
+  // vertical centre so the full-rate region lands over the gaze content.
+  XrFoveationMetalImageLayoutMNDX image_layout{
+      XR_TYPE_FOVEATION_METAL_IMAGE_LAYOUT_MNDX};
+  image_layout.verticalFlip =
+      graphics_binding_->IsBaseLayerStoredVerticallyFlipped() ? XR_TRUE
+                                                              : XR_FALSE;
 
   XrFoveationMetalPackedStateMNDX packed{
       XR_TYPE_FOVEATION_METAL_PACKED_STATE_MNDX};
-  packed.viewCount = static_cast<uint32_t>(properties.size());
+  packed.next = &image_layout;
+  packed.viewCount = static_cast<uint32_t>(image_rects.size());
   packed.views = packed_views.data();
 
   XrFoveationMetalStateMNDX metal{XR_TYPE_FOVEATION_METAL_STATE_MNDX};

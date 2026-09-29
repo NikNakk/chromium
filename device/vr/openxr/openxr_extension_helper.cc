@@ -265,8 +265,10 @@ bool OpenXrExtensionHelper::SupportsStandardFoveation() const {
   return IsExtensionSupported(XR_FB_SWAPCHAIN_UPDATE_STATE_EXTENSION_NAME) &&
          IsExtensionSupported(XR_FB_FOVEATION_EXTENSION_NAME) &&
          IsExtensionSupported(XR_FB_FOVEATION_CONFIGURATION_EXTENSION_NAME) &&
+         // Version 3 lets the packed query declare the vertically flipped
+         // storage WebGL uses; without it the foveal region is misplaced.
          extension_enumeration_->ExtensionVersionAtLeast(
-             XR_MNDX_FOVEATION_METAL_EXTENSION_NAME, 2) &&
+             XR_MNDX_FOVEATION_METAL_EXTENSION_NAME, 3) &&
          extension_methods_.xrCreateFoveationProfileFB &&
          extension_methods_.xrDestroyFoveationProfileFB &&
          extension_methods_.xrUpdateSwapchainFB &&

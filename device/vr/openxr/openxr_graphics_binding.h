@@ -249,6 +249,16 @@ class OpenXrGraphicsBinding {
   std::vector<XrCompositionLayerProjectionView> GetBaseLayerProjectionViews(
       const OpenXrViewConfiguration& view_config) const;
 
+  // Per-view imageRects of the base layer exactly as a rendered frame submits
+  // them. Runtime foveation queries must describe these same rectangles, so
+  // both come from GetProjectionViews().
+  std::vector<XrRect2Di> GetBaseLayerSubmittedImageRects(
+      const OpenXrViewConfiguration& view_config) const;
+
+  // True when base-layer views are stored vertically mirrored in the texture
+  // and submitted with a vertical flip (e.g. GL-oriented content on Metal).
+  bool IsBaseLayerStoredVerticallyFlipped() const;
+
   // A few methods that operate on all layers.
 
   // Acquire swapchain images from the OpenXr system.

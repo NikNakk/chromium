@@ -236,6 +236,23 @@ OpenXrGraphicsBinding::GetBaseLayerProjectionViews(
   return projection_views;
 }
 
+std::vector<XrRect2Di> OpenXrGraphicsBinding::GetBaseLayerSubmittedImageRects(
+    const OpenXrViewConfiguration& view_config) const {
+  std::vector<XrRect2Di> rects;
+  if (!base_layer_) {
+    return rects;
+  }
+  for (const XrCompositionLayerProjectionView& view :
+       GetProjectionViews(view_config, *base_layer_)) {
+    rects.push_back(view.subImage.imageRect);
+  }
+  return rects;
+}
+
+bool OpenXrGraphicsBinding::IsBaseLayerStoredVerticallyFlipped() const {
+  return base_layer_ && ShouldFlipSubmittedImage(*base_layer_);
+}
+
 std::vector<XrCompositionLayerProjectionView>
 OpenXrGraphicsBinding::GetProjectionViews(
     const OpenXrViewConfiguration& view_config,

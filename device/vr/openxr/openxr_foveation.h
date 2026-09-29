@@ -78,12 +78,13 @@ typedef XrResult(XRAPI_PTR* PFN_xrGetFoveationProfileMNDX)(
 // the Metal rendering state needed by clients using XR_KHR_metal_enable.
 #ifndef XR_MNDX_foveation_metal
 #define XR_MNDX_foveation_metal 1
-#define XR_MNDX_foveation_metal_SPEC_VERSION 2
+#define XR_MNDX_foveation_metal_SPEC_VERSION 3
 #define XR_MNDX_FOVEATION_METAL_EXTENSION_NAME "XR_MNDX_foveation_metal"
 #define XR_MNDX_FOVEATION_METAL_RATE_SAMPLE_COUNT 16
 #define XR_MNDX_FOVEATION_METAL_MAP_BOUNDARY_COUNT 129
 #define XR_TYPE_FOVEATION_METAL_STATE_MNDX ((XrStructureType)0x7fff5057)
 #define XR_TYPE_FOVEATION_METAL_PACKED_STATE_MNDX   ((XrStructureType)0x7fff5058)
+#define XR_TYPE_FOVEATION_METAL_IMAGE_LAYOUT_MNDX ((XrStructureType)0x7fff5059)
 
 typedef struct XrFoveationMetalStateMNDX {
   XrStructureType type;
@@ -113,6 +114,14 @@ typedef struct XrFoveationMetalPackedStateMNDX {
   float x[XR_MNDX_FOVEATION_METAL_MAP_BOUNDARY_COUNT];
   float y[XR_MNDX_FOVEATION_METAL_MAP_BOUNDARY_COUNT];
 } XrFoveationMetalPackedStateMNDX;
+
+// Spec version 3, chained to XrFoveationMetalPackedStateMNDX::next: the
+// packed views are stored vertically mirrored and submitted with a flip.
+typedef struct XrFoveationMetalImageLayoutMNDX {
+  XrStructureType type;
+  RAW_PTR_EXCLUSION const void* next;
+  XrBool32 verticalFlip;
+} XrFoveationMetalImageLayoutMNDX;
 
 typedef XrResult(XRAPI_PTR* PFN_xrGetFoveationMetalStateMNDX)(
     XrSwapchain swapchain,
