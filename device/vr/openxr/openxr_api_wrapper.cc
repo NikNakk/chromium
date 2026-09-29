@@ -13,6 +13,7 @@
 
 #include "base/check.h"
 #include "base/command_line.h"
+#include "base/containers/span.h"
 #include "base/feature_list.h"
 #include "base/functional/callback_helpers.h"
 #include "base/notreached.h"
@@ -73,6 +74,7 @@ XrFoveationLevelFB GetStandardFoveationLevel(OpenXrFoveationLevel level) {
     case OpenXrFoveationLevel::kExtreme:
       return XR_FOVEATION_LEVEL_HIGH_FB;
   }
+  NOTREACHED();
 }
 
 OpenXrFoveationLevel GetDiagnosticFoveationLevel() {
@@ -1015,12 +1017,13 @@ bool OpenXrApiWrapper::UpdateStandardFoveation() const {
   state.physical_size =
       gfx::Size(static_cast<int>(metal.physicalWidth),
                 static_cast<int>(metal.physicalHeight));
-  state.horizontal_rates.assign(
-      packed.horizontalSampleRates,
-      packed.horizontalSampleRates + packed.horizontalSampleCount);
-  state.vertical_rates.assign(
-      packed.verticalSampleRates,
-      packed.verticalSampleRates + packed.verticalSampleCount);
+  const auto horizontal_rates = base::span(packed.horizontalSampleRates)
+                                    .first(packed.horizontalSampleCount);
+  const auto vertical_rates =
+      base::span(packed.verticalSampleRates).first(packed.verticalSampleCount);
+  state.horizontal_rates.assign(horizontal_rates.begin(),
+                                horizontal_rates.end());
+  state.vertical_rates.assign(vertical_rates.begin(), vertical_rates.end());
   return graphics_binding_->ConfigureBaseLayerResolvedFoveation(state);
 }
 
