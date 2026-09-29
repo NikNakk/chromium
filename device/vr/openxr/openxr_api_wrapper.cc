@@ -12,10 +12,12 @@
 #include <type_traits>
 
 #include "base/check.h"
+#include "base/command_line.h"
 #include "base/feature_list.h"
 #include "base/functional/callback_helpers.h"
 #include "base/notreached.h"
 #include "base/numerics/angle_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/trace_event/trace_event.h"
 #include "base/trace_event/typed_macros.h"
@@ -28,6 +30,7 @@
 #include "device/vr/openxr/openxr_util.h"
 #include "device/vr/openxr/openxr_view_configuration.h"
 #include "device/vr/public/cpp/features.h"
+#include "device/vr/public/cpp/switches.h"
 #include "device/vr/public/mojom/xr_session.mojom.h"
 #include "gpu/GLES2/gl2extchromium.h"
 #include "gpu/command_buffer/client/shared_image_interface.h"
@@ -57,6 +60,26 @@ namespace {
 // events if significant time has elapsed since the last time events were
 // polled.
 constexpr base::TimeDelta kTimeBetweenPollingEvents = base::Seconds(1);
+
+OpenXrFoveationLevel GetDiagnosticFoveationLevel() {
+  const base::CommandLine* command_line =
+      base::CommandLine::ForCurrentProcess();
+  int level = static_cast<int>(OpenXrFoveationLevel::kAggressive);
+  if (!command_line->HasSwitch(switches::kXrFoveationLevel)) {
+    return static_cast<OpenXrFoveationLevel>(level);
+  }
+
+  const std::string value =
+      command_line->GetSwitchValueASCII(switches::kXrFoveationLevel);
+  int parsed_level = level;
+  if (!base::StringToInt(value, &parsed_level) || parsed_level < 0 ||
+      parsed_level > static_cast<int>(OpenXrFoveationLevel::kExtreme)) {
+    LOG(WARNING) << "Ignoring invalid --" << switches::kXrFoveationLevel
+                 << "=" << value << "; expected 0-5";
+    return static_cast<OpenXrFoveationLevel>(level);
+  }
+  return static_cast<OpenXrFoveationLevel>(parsed_level);
+}
 
 const char* GetXrSessionStateName(XrSessionState state) {
   switch (state) {
@@ -166,6 +189,8 @@ void OpenXrApiWrapper::Reset() {
 
   frame_state_ = {};
   input_helper_.reset();
+  foveation_policy_.reset();
+  foveation_fixed_center_ = false;
 
   session_options_.reset();
   on_session_started_callback_.Reset();
@@ -703,12 +728,34 @@ XrResult OpenXrApiWrapper::InitSession(
       page_dynamic_foveation_requested &&
       extension_helper.IsFeatureSupported(
           device::mojom::XRSessionFeature::DYNAMIC_FOVEATION);
-  const bool allow_dynamic_foveation =
-      session_options_->is_ua_immersive_media ||
-      page_dynamic_foveation_supported;
+
+  bool ua_foveation_enabled = session_options_->is_ua_immersive_media;
+  bool ua_dynamic_foveation = session_options_->is_ua_immersive_media;
+  foveation_fixed_center_ = false;
+  if (session_options_->is_ua_immersive_media) {
+    const base::CommandLine* command_line =
+        base::CommandLine::ForCurrentProcess();
+    const std::string mode =
+        command_line->HasSwitch(switches::kXrFoveationMode)
+            ? command_line->GetSwitchValueASCII(switches::kXrFoveationMode)
+            : switches::kXrFoveationModeDynamic;
+    if (mode == switches::kXrFoveationModeOff) {
+      ua_foveation_enabled = false;
+      ua_dynamic_foveation = false;
+    } else if (mode == switches::kXrFoveationModeFixed) {
+      ua_dynamic_foveation = false;
+      foveation_fixed_center_ = true;
+    } else if (mode != switches::kXrFoveationModeDynamic) {
+      LOG(WARNING) << "Ignoring invalid --" << switches::kXrFoveationMode
+                   << "=" << mode << "; expected off, fixed, or dynamic";
+    }
+  }
+
+  const bool allow_foveation =
+      ua_foveation_enabled || page_dynamic_foveation_supported;
 
   graphics_binding_->OnSessionCreated(local_space_, webgpu_session,
-                                      allow_dynamic_foveation);
+                                      allow_foveation);
 
   // Some graphics bindings (including the macOS direct-Metal path) have no
   // copy-based fallback: their OpenXR swapchain images must be exposed as
@@ -737,21 +784,27 @@ XrResult OpenXrApiWrapper::InitSession(
   // dynamic-foveation feature and the runtime proving it can support it.
   // The gaze pose stays inside the XR process.
   const bool enable_eye_gaze =
-      session_options_->is_ua_immersive_media ||
-      page_dynamic_foveation_supported;
+      ua_dynamic_foveation || page_dynamic_foveation_supported;
 
   RETURN_IF_XR_FAILED(OpenXRInputHelper::CreateOpenXRInputHelper(
       instance_, system_, system_properties.systemName, extension_helper,
       session_, local_space_, enable_hand_tracking, enable_eye_gaze,
       &input_helper_));
 
-  // Keep policy selection above the graphics backend. Dynamic gaze-driven
-  // foveation is enabled for browser-owned immersive media and for page WebXR
-  // sessions that explicitly opted in via "dynamic-foveation". Gaze
-  // coordinates never cross into the renderer process.
-  if (allow_dynamic_foveation) {
-    foveation_policy_ = extension_helper.GetFoveationPolicy(
-        instance_, system_, OpenXrFoveationLevel::kAggressive);
+  // Keep policy selection above the graphics backend. Browser-owned
+  // immersive media has diagnostic off/fixed/dynamic controls. Page WebXR
+  // remains dynamic-only and requires the permissioned session feature.
+  if (allow_foveation) {
+    const OpenXrFoveationLevel level =
+        session_options_->is_ua_immersive_media
+            ? GetDiagnosticFoveationLevel()
+            : OpenXrFoveationLevel::kAggressive;
+    foveation_policy_ =
+        extension_helper.GetFoveationPolicy(instance_, system_, level);
+    DVLOG(1) << "XR foveation: ua_immersive_media="
+             << session_options_->is_ua_immersive_media
+             << " fixed=" << foveation_fixed_center_
+             << " level=" << static_cast<int>(level);
   } else {
     foveation_policy_.reset();
   }
@@ -1542,37 +1595,45 @@ void OpenXrApiWrapper::UpdateFoveation() const {
     graphics_binding_->ClearBaseLayerFoveation();
   };
 
-  if (!foveation_policy_ || !input_helper_ || !HasFrameState() ||
+  if (!foveation_policy_ || !HasFrameState() ||
       primary_view_config_.Views().empty()) {
     disable_foveation();
     return;
   }
 
-  const std::optional<XrPosef> gaze_pose = input_helper_->GetEyeGazePose(
-      view_space_, frame_state_.predictedDisplayTime);
-  if (!gaze_pose) {
-    disable_foveation();
-    return;
+  float tangent_x = 0.0f;
+  float tangent_y = 0.0f;
+  if (!foveation_fixed_center_) {
+    if (!input_helper_) {
+      disable_foveation();
+      return;
+    }
+    const std::optional<XrPosef> gaze_pose = input_helper_->GetEyeGazePose(
+        view_space_, frame_state_.predictedDisplayTime);
+    if (!gaze_pose) {
+      disable_foveation();
+      return;
+    }
+
+    // TransformVector() is no longer part of gfx::Transform. Use homogeneous
+    // vector coordinates with w=0 so this remains a direction rather than a
+    // point if translation is ever introduced into the transform.
+    std::array<float, 4> direction = {0.0f, 0.0f, -1.0f, 0.0f};
+    gfx::Transform gaze_rotation(gfx::Quaternion(
+        gaze_pose->orientation.x, gaze_pose->orientation.y,
+        gaze_pose->orientation.z, gaze_pose->orientation.w));
+    gaze_rotation.TransformVector4(direction);
+
+    const float horizontal_length =
+        std::sqrt(direction[0] * direction[0] + direction[2] * direction[2]);
+    if (horizontal_length <= 1e-6f || direction[2] >= -1e-6f) {
+      disable_foveation();
+      return;
+    }
+
+    tangent_x = direction[0] / -direction[2];
+    tangent_y = direction[1] / horizontal_length;
   }
-
-  // TransformVector() is no longer part of gfx::Transform. Use homogeneous
-  // vector coordinates with w=0 so this remains a direction rather than a
-  // point if translation is ever introduced into the transform.
-  std::array<float, 4> direction = {0.0f, 0.0f, -1.0f, 0.0f};
-  gfx::Transform gaze_rotation(gfx::Quaternion(
-      gaze_pose->orientation.x, gaze_pose->orientation.y,
-      gaze_pose->orientation.z, gaze_pose->orientation.w));
-  gaze_rotation.TransformVector4(direction);
-
-  const float horizontal_length =
-      std::sqrt(direction[0] * direction[0] + direction[2] * direction[2]);
-  if (horizontal_length <= 1e-6f || direction[2] >= -1e-6f) {
-    disable_foveation();
-    return;
-  }
-
-  const float tangent_x = direction[0] / -direction[2];
-  const float tangent_y = direction[1] / horizontal_length;
 
   std::vector<gfx::PointF> target_centers;
   target_centers.reserve(primary_view_config_.Views().size());

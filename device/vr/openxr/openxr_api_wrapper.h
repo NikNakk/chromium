@@ -221,6 +221,9 @@ class OpenXrApiWrapper {
 
   std::unique_ptr<OpenXRInputHelper> input_helper_;
   std::optional<OpenXrFoveationPolicy> foveation_policy_;
+  // Diagnostic fixed foveation keeps the foveal centre on each view's optical
+  // axis. It is only set for browser-owned immersive-media sessions.
+  bool foveation_fixed_center_ = false;
 
   // OpenXR objects
 

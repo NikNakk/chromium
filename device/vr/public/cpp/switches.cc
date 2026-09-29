@@ -11,4 +11,9 @@ const char kWebXrHandAnonymizationStrategyNone[] = "none";
 const char kWebXrHandAnonymizationStrategyRuntime[] = "runtime";
 const char kWebXrHandAnonymizationStrategyFallback[] = "fallback";
 const char kWebXrMaxFramebufferScale[] = "webxr-max-framebuffer-scale";
+const char kXrFoveationMode[] = "xr-foveation-mode";
+const char kXrFoveationModeOff[] = "off";
+const char kXrFoveationModeFixed[] = "fixed";
+const char kXrFoveationModeDynamic[] = "dynamic";
+const char kXrFoveationLevel[] = "xr-foveation-level";
 }  // namespace device::switches
