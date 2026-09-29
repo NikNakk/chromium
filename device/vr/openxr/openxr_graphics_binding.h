@@ -56,8 +56,12 @@ class OpenXrGraphicsBinding {
   // Ensures that the GraphicsBinding is ready for use.
   virtual bool Initialize(XrInstance instance, XrSystemId system) = 0;
 
-  // Called after the XrSession has been created.
-  void OnSessionCreated(XrSpace local_space, bool is_webgpu);
+  // Called after the XrSession has been created. Dynamic eye-tracked
+  // foveation is privileged UA behaviour and must never be enabled merely
+  // because a page created an immersive WebXR session.
+  void OnSessionCreated(XrSpace local_space,
+                        bool is_webgpu,
+                        bool allow_dynamic_foveation);
 
   // Called when the XrSession is going to destroyed.
   void OnSessionDestroyed(gpu::SharedImageInterface* sii);
@@ -163,6 +167,12 @@ class OpenXrGraphicsBinding {
   // Called to indicate which graphics API produced the textures submitted to
   // OpenXR. Does not affect the API used for compositing.
   bool IsWebGPUSession() const { return webgpu_session_; }
+
+  // True only for browser-owned sessions that are allowed to use internal
+  // eye-gaze data to drive foveation.
+  bool IsDynamicFoveationAllowed() const {
+    return dynamic_foveation_allowed_;
+  }
 
   // If the layer should be flipped, return a pointer to the
   // XrCompositionLayerImageLayoutFB. Otherwise, return null. The return value
@@ -364,6 +374,7 @@ class OpenXrGraphicsBinding {
   std::vector<LayerId> layers_sequence_;
   bool has_custom_projection_layer_ = false;
   bool webgpu_session_ = false;
+  bool dynamic_foveation_allowed_ = false;
   bool fb_composition_layer_ext_enabled_ = false;
   bool webxr_visible_ = true;
   bool overlay_visible_ = false;

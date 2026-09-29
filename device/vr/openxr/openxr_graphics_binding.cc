@@ -96,11 +96,18 @@ bool OpenXrGraphicsBinding::PublishBaseLayerFoveation(
 
 void OpenXrGraphicsBinding::ClearPublishedBaseLayerFoveation() {}
 
-void OpenXrGraphicsBinding::OnSessionCreated(XrSpace local_space,
-                                             bool is_webgpu) {
+void OpenXrGraphicsBinding::OnSessionCreated(
+    XrSpace local_space,
+    bool is_webgpu,
+    bool allow_dynamic_foveation) {
   webgpu_session_ = is_webgpu;
-  foveation_backend_ = CreateFoveationBackend();
-  if (foveation_backend_ && !foveation_backend_->IsSupported()) {
+  dynamic_foveation_allowed_ = allow_dynamic_foveation;
+  if (dynamic_foveation_allowed_) {
+    foveation_backend_ = CreateFoveationBackend();
+    if (foveation_backend_ && !foveation_backend_->IsSupported()) {
+      foveation_backend_.reset();
+    }
+  } else {
     foveation_backend_.reset();
   }
 
@@ -143,6 +150,7 @@ void OpenXrGraphicsBinding::OnSessionDestroyed(gpu::SharedImageInterface* sii) {
     foveation_backend_->Reset();
     foveation_backend_.reset();
   }
+  dynamic_foveation_allowed_ = false;
   if (base_layer_) {
     base_layer_->DestroySwapchain(sii);
     base_layer_.reset();

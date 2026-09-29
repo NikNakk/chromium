@@ -12,8 +12,9 @@ an IOSurface by the isolated XR service and supplies the corresponding
 MTLRasterizationRateMap.
 
 The patch is idempotent and pinned to the ANGLE revision in this Chromium
-branch. If ANGLE rolls and the surrounding source changes, fail loudly so the
-bridge can be rebased instead of silently patching the wrong code.
+branch. A normal gclient hook warns and skips if ANGLE has rolled, so dependency
+updates are not blocked. --check remains strict so maintainers can detect when
+the bridge needs rebasing.
 """
 
 from __future__ import annotations
@@ -25,6 +26,59 @@ import sys
 
 EXPECTED_ANGLE_REVISION = "2bb28bbcef760ede0c084f4cf3341f495887f1f5"
 MARKER = "org.chromium.openxr.metal-foveation-v1"
+XR_TEXTURE_LABEL = "ChromiumOpenXrFoveated"
+
+
+TEXTURE_HEADER_OLD = r"""    angle::Result bindTexImage(const gl::Context *context, egl::Surface *surface) override;
+    angle::Result releaseTexImage(const gl::Context *context) override;
+"""
+
+TEXTURE_HEADER_NEW = r"""    angle::Result bindTexImage(const gl::Context *context, egl::Surface *surface) override;
+    angle::Result releaseTexImage(const gl::Context *context) override;
+    angle::Result onLabelUpdate(const gl::Context *context) override;
+"""
+
+TEXTURE_BIND_OLD = r"""    ANGLE_TRY(ensureSamplerStateCreated(context));
+    ANGLE_TRY(createViewFromBaseToMaxLevel());
+
+    // Tell context to rebind textures
+"""
+
+TEXTURE_BIND_NEW = r"""    ANGLE_TRY(ensureSamplerStateCreated(context));
+    ANGLE_TRY(createViewFromBaseToMaxLevel());
+    ANGLE_TRY(onLabelUpdate(context));
+
+    // Tell context to rebind textures
+"""
+
+TEXTURE_RELEASE_OLD = r"""angle::Result TextureMtl::releaseTexImage(const gl::Context *context)
+{
+    deallocateNativeStorage(/*keepImages=*/false);
+    mBoundSurface = nullptr;
+    return angle::Result::Continue;
+}
+
+angle::Result TextureMtl::getAttachmentRenderTarget"""
+
+TEXTURE_RELEASE_NEW = r"""angle::Result TextureMtl::releaseTexImage(const gl::Context *context)
+{
+    deallocateNativeStorage(/*keepImages=*/false);
+    mBoundSurface = nullptr;
+    return angle::Result::Continue;
+}
+
+angle::Result TextureMtl::onLabelUpdate(const gl::Context *context)
+{
+    if (mNativeTextureStorage)
+    {
+        const std::string &label = mState.getLabel();
+        mNativeTextureStorage->get().label =
+            label.empty() ? nil : [NSString stringWithUTF8String:label.c_str()];
+    }
+    return angle::Result::Continue;
+}
+
+angle::Result TextureMtl::getAttachmentRenderTarget"""
 
 HEADER_OLD = r"""    angle::ObjCPtr<MTLRenderPassDescriptor> mCachedRenderPassDescObjC;
 
@@ -83,6 +137,15 @@ NAMESPACE_NEW = r"""namespace
 {
 
 #if TARGET_OS_OSX
+
+bool IsChromiumXrFoveatedTexture(id<MTLTexture> texture)
+{
+    if (texture == nil || texture.label == nil)
+    {
+        return false;
+    }
+    return [texture.label hasPrefix:@"ChromiumOpenXrFoveated"];
+}
 
 angle::ObjCPtr<NSDictionary>
 CopyChromiumXrFoveationMetadata(id<MTLTexture> texture)
@@ -207,12 +270,6 @@ BuildChromiumXrFoveationRateMap(id<MTLTexture> renderTexture, NSDictionary *meta
         return {};
     }
 
-    ANGLE_MTL_LOG("Chromium XR foveation logical=%lux%lu physical=%lux%lu zones=%lu",
-                  static_cast<unsigned long>(logicalWidth),
-                  static_cast<unsigned long>(logicalHeight),
-                  static_cast<unsigned long>(physicalSize.width),
-                  static_cast<unsigned long>(physicalSize.height),
-                  static_cast<unsigned long>(zoneCount));
     return rateMap;
 }
 
@@ -242,15 +299,23 @@ RESTART_NEW = r"""    // Convert to Objective-C descriptor
             mCachedRenderPassDescObjC.get().colorAttachments[0];
         id<MTLTexture> renderTexture = colorAttachment.texture;
 
-        angle::ObjCPtr<NSDictionary> metadata =
-            CopyChromiumXrFoveationMetadata(renderTexture);
-        if (!metadata && colorAttachment.resolveTexture != nil)
+        // Chromium labels only browser-owned XR foveation targets. This
+        // prefix test is intentionally the first gate so ordinary WebGL never
+        // calls IOSurfaceCopyValue from the render-pass hot path.
+        id<MTLTexture> metadataTexture = nil;
+        if (IsChromiumXrFoveatedTexture(renderTexture))
+        {
+            metadataTexture = renderTexture;
+        }
+        else if (IsChromiumXrFoveatedTexture(colorAttachment.resolveTexture))
         {
             // The default WebGL framebuffer may render through an internal
             // multisample attachment and resolve into the XR IOSurface.
-            metadata = CopyChromiumXrFoveationMetadata(colorAttachment.resolveTexture);
+            metadataTexture = colorAttachment.resolveTexture;
         }
 
+        angle::ObjCPtr<NSDictionary> metadata =
+            CopyChromiumXrFoveationMetadata(metadataTexture);
         if (metadata && renderTexture != nil)
         {
             const bool metadataChanged =
@@ -306,30 +371,69 @@ def _angle_revision(angle_root: Path) -> str | None:
         return None
 
 
-def apply_patch(check_only: bool) -> None:
+def apply_patch(check_only: bool) -> bool:
     chromium_root = Path(__file__).resolve().parents[4]
     angle_root = chromium_root / "third_party" / "angle"
     header_path = angle_root / "src/libANGLE/renderer/metal/mtl_command_buffer.h"
     impl_path = angle_root / "src/libANGLE/renderer/metal/mtl_command_buffer.mm"
+    texture_header_path = angle_root / "src/libANGLE/renderer/metal/TextureMtl.h"
+    texture_impl_path = angle_root / "src/libANGLE/renderer/metal/TextureMtl.mm"
 
-    if not header_path.is_file() or not impl_path.is_file():
+    if (
+        not header_path.is_file()
+        or not impl_path.is_file()
+        or not texture_header_path.is_file()
+        or not texture_impl_path.is_file()
+    ):
         raise RuntimeError(
             "third_party/angle is unavailable; run gclient sync before generating the macOS OpenXR build"
         )
 
     header = header_path.read_text()
     impl = impl_path.read_text()
+    texture_header = texture_header_path.read_text()
+    texture_impl = texture_impl_path.read_text()
 
     revision = _angle_revision(angle_root)
     if revision is not None and revision != EXPECTED_ANGLE_REVISION:
-        raise RuntimeError(
+        message = (
             "ANGLE revision changed: expected "
-            f"{EXPECTED_ANGLE_REVISION}, found {revision}. Rebase the XR Metal foveation bridge."
+            f"{EXPECTED_ANGLE_REVISION}, found {revision}. "
+            "Rebase the XR Metal foveation bridge."
         )
+        if check_only:
+            raise RuntimeError(message)
+        print(f"Chromium XR ANGLE foveation patch skipped: {message}", file=sys.stderr)
+        return False
 
     # Apply each piece independently. This keeps the hook idempotent even when
     # the ANGLE checkout already contains one of the required includes or a
     # previous local experiment applied only part of the bridge.
+    new_texture_header = texture_header
+    if "onLabelUpdate(const gl::Context *context) override;" not in new_texture_header:
+        new_texture_header = _replace_once(
+            new_texture_header,
+            TEXTURE_HEADER_OLD,
+            TEXTURE_HEADER_NEW,
+            "TextureMtl.h label hook",
+        )
+
+    new_texture_impl = texture_impl
+    if "ANGLE_TRY(onLabelUpdate(context));" not in new_texture_impl:
+        new_texture_impl = _replace_once(
+            new_texture_impl,
+            TEXTURE_BIND_OLD,
+            TEXTURE_BIND_NEW,
+            "TextureMtl.mm bind label propagation",
+        )
+    if "TextureMtl::onLabelUpdate" not in new_texture_impl:
+        new_texture_impl = _replace_once(
+            new_texture_impl,
+            TEXTURE_RELEASE_OLD,
+            TEXTURE_RELEASE_NEW,
+            "TextureMtl.mm label hook",
+        )
+
     new_header = header
     if "mXrFoveationRateMap" not in new_header:
         new_header = _replace_once(
@@ -365,11 +469,14 @@ def apply_patch(check_only: bool) -> None:
         )
 
     if check_only:
-        return
+        return True
 
-    # Validate every replacement before touching either file, then write both.
+    # Validate every replacement before touching any file, then write all four.
+    texture_header_path.write_text(new_texture_header)
+    texture_impl_path.write_text(new_texture_impl)
     header_path.write_text(new_header)
     impl_path.write_text(new_impl)
+    return True
 
 
 def main() -> int:
@@ -382,13 +489,12 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
-        apply_patch(args.check)
+        applied = apply_patch(args.check)
     except Exception as exc:
         print(f"Chromium XR ANGLE foveation patch failed: {exc}", file=sys.stderr)
         return 1
 
-    # GN's exec_script uses this exact value as a generation-time assertion.
-    print("ok")
+    print("ok" if applied else "skipped")
     return 0
 
 

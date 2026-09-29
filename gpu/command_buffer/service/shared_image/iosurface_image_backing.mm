@@ -1177,6 +1177,19 @@ IOSurfaceImageBacking::RetainGLTexture() {
     // Set the IOSurface to be initially unbound from the GL texture.
     gl_texture->SetEstimatedSize(format().EstimatedSizeInBytes(size()));
 
+    // Mark only privileged UA-owned XR render targets. The patched ANGLE Metal
+    // backend propagates this KHR_debug label to its native MTLTexture, giving
+    // the render-pass hot path a cheap gate before IOSurface metadata.
+    const std::string& label = debug_label();
+    if (label.rfind("OpenXrMetalDirectFoveated_Pid:", 0) == 0 ||
+        label.rfind("OpenXrMetalTransferFoveated_Pid:", 0) == 0) {
+      constexpr char kXrFoveatedTextureLabel[] = "ChromiumOpenXrFoveated";
+      gl::g_current_gl_context->glObjectLabelKHRFn(
+          GL_TEXTURE, gl_texture->service_id(),
+          static_cast<GLsizei>(sizeof(kXrFoveatedTextureLabel) - 1),
+          kXrFoveatedTextureLabel);
+    }
+
     gl_textures.push_back(std::move(gl_texture));
   }
 

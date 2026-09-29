@@ -686,7 +686,8 @@ XrResult OpenXrApiWrapper::InitSession(
                             device::mojom::XRSessionFeature::WEBGPU) ||
       std::ranges::contains(session_options_->optional_features,
                             device::mojom::XRSessionFeature::WEBGPU);
-  graphics_binding_->OnSessionCreated(local_space_, webgpu_session);
+  graphics_binding_->OnSessionCreated(
+      local_space_, webgpu_session, session_options_->is_ua_immersive_media);
 
   // Some graphics bindings (including the macOS direct-Metal path) have no
   // copy-based fallback: their OpenXR swapchain images must be exposed as

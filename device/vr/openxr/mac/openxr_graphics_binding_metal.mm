@@ -1009,12 +1009,16 @@ void OpenXrGraphicsBindingMetal::CreateSharedImages(
                             gfx::ColorSpace::TransferID::LINEAR,
                             gfx::ColorSpace::MatrixID::RGB,
                             gfx::ColorSpace::RangeID::FULL);
+  const bool foveation_capable_base_layer =
+      IsDynamicFoveationAllowed() && layer.GetLayerId() == kInvalidLayerId;
   const gpu::SharedImageInfo direct_si_info{
       viz::SinglePlaneFormat::kBGRA_8888, runtime_size, color_space, usage,
-      "OpenXrMetalDirect"};
+      foveation_capable_base_layer ? "OpenXrMetalDirectFoveated"
+                                   : "OpenXrMetalDirect"};
   const gpu::SharedImageInfo fallback_si_info{
       viz::SinglePlaneFormat::kBGRA_8888, transfer_size, color_space, usage,
-      "OpenXrMetalTransfer"};
+      foveation_capable_base_layer ? "OpenXrMetalTransferFoveated"
+                                   : "OpenXrMetalTransfer"};
 
   for (auto& swap_chain_info : layer.GetSwapchainImages()) {
     if (swap_chain_info.shared_image) {
