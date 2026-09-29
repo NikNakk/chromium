@@ -208,6 +208,9 @@ void OpenXrApiWrapper::Reset() {
   foveation_policy_.reset();
   standard_foveation_enabled_ = false;
   standard_foveation_eye_tracked_ = false;
+  // Uninitialize() destroys the profile before the session; Reset() never
+  // discards a live handle.
+  DCHECK_EQ(standard_foveation_profile_, XR_NULL_HANDLE);
   standard_foveation_profile_ = XR_NULL_HANDLE;
   foveation_fixed_center_ = false;
 
@@ -276,12 +279,16 @@ void OpenXrApiWrapper::Uninitialize() {
   scene_understanding_manager_.reset();
   mesh_manager_.reset();
 
+  // FB foveation profiles are session children: destroy them exactly once,
+  // while the session is still valid. If the destroy entry point is
+  // unavailable the profile dies with the session; either way drop the handle
+  // so nothing can use it after xrDestroySession().
   if (standard_foveation_profile_ != XR_NULL_HANDLE && extension_helper_ &&
       extension_helper_->ExtensionMethods().xrDestroyFoveationProfileFB) {
     extension_helper_->ExtensionMethods().xrDestroyFoveationProfileFB(
         standard_foveation_profile_);
-    standard_foveation_profile_ = XR_NULL_HANDLE;
   }
+  standard_foveation_profile_ = XR_NULL_HANDLE;
 
   // Destroying an session in OpenXr also destroys all child objects of that
   // instance (including the swapchain, and spaces objects),
@@ -808,13 +815,14 @@ XrResult OpenXrApiWrapper::InitSession(
   bool swapchain_size_updated = RecomputeSwapchainSizeAndViewports();
   DCHECK(swapchain_size_updated);
 
-  // Swapchain must be created after size is updated.
-  RETURN_IF_XR_FAILED(CreateSwapchain());
-
   const OpenXrFoveationLevel selected_foveation_level =
       session_options_->is_ua_immersive_media
           ? GetDiagnosticFoveationLevel()
           : OpenXrFoveationLevel::kAggressive;
+
+  // Create the FB profile before the swapchain: the swapchain is only created
+  // foveation-capable once the standard path is known to be usable, so a
+  // failure here leaves an ordinary swapchain for the legacy/unfoveated path.
   if (standard_foveation_enabled_) {
     const XrResult standard_result = CreateStandardFoveationProfile(
         selected_foveation_level, standard_foveation_eye_tracked_);
@@ -827,18 +835,33 @@ XrResult OpenXrApiWrapper::InitSession(
     }
   }
 
+  // Swapchain must be created after size is updated.
+  RETURN_IF_XR_FAILED(CreateSwapchain());
+
+  // The legacy runtime policy is only a fallback for sessions that allowed
+  // foveation but cannot use the standard path.
+  if (allow_foveation && !standard_foveation_enabled_) {
+    foveation_policy_ = extension_helper.GetFoveationPolicy(
+        instance_, system_, selected_foveation_level);
+  } else {
+    foveation_policy_.reset();
+  }
+
   const bool enable_hand_tracking =
       std::ranges::contains(session_options_->required_features,
                             device::mojom::XRSessionFeature::HAND_INPUT) ||
       std::ranges::contains(session_options_->optional_features,
                             device::mojom::XRSessionFeature::HAND_INPUT);
-  // Eye tracking remains privileged input. Page-created sessions get an
-  // eye-gaze action only after explicitly requesting the branch-local
-  // dynamic-foveation feature and the runtime proving it can support it.
-  // The gaze pose stays inside the XR process.
+  // Eye tracking remains privileged input. The standard path never needs a
+  // Chromium eye-gaze action: META keeps gaze inside the runtime. Only the
+  // legacy fallback, when it can actually drive dynamic foveation, creates
+  // one, and only for UA immersive media or a page that requested the
+  // permissioned dynamic-foveation feature. The gaze pose stays inside the
+  // XR process.
   const bool enable_eye_gaze =
-      !standard_foveation_enabled_ &&
-      (ua_dynamic_foveation || page_dynamic_foveation_supported);
+      !standard_foveation_enabled_ && wants_dynamic_foveation &&
+      foveation_policy_.has_value() &&
+      graphics_binding_->SupportsDynamicFoveation();
 
   RETURN_IF_XR_FAILED(OpenXRInputHelper::CreateOpenXRInputHelper(
       instance_, system_, system_properties.systemName, extension_helper,
@@ -848,16 +871,12 @@ XrResult OpenXrApiWrapper::InitSession(
   // Keep policy selection above the graphics backend. Browser-owned
   // immersive media has diagnostic off/fixed/dynamic controls. Page WebXR
   // remains dynamic-only and requires the permissioned session feature.
-  if (allow_foveation && !standard_foveation_enabled_) {
-    foveation_policy_ = extension_helper.GetFoveationPolicy(
-        instance_, system_, selected_foveation_level);
-  } else {
-    foveation_policy_.reset();
-  }
   DVLOG(1) << "XR foveation: ua_immersive_media="
            << session_options_->is_ua_immersive_media
            << " standard=" << standard_foveation_enabled_
            << " eye_tracked=" << standard_foveation_eye_tracked_
+           << " legacy=" << foveation_policy_.has_value()
+           << " legacy_eye_gaze=" << enable_eye_gaze
            << " fixed_legacy=" << foveation_fixed_center_
            << " level=" << static_cast<int>(selected_foveation_level);
 
@@ -941,11 +960,17 @@ XrResult OpenXrApiWrapper::CreateStandardFoveationProfile(
     level_info.next = &eye_info;
   }
 
+  DCHECK_EQ(standard_foveation_profile_, XR_NULL_HANDLE);
   XrFoveationProfileCreateInfoFB create_info{
       XR_TYPE_FOVEATION_PROFILE_CREATE_INFO_FB};
   create_info.next = &level_info;
-  return methods.xrCreateFoveationProfileFB(
+  const XrResult result = methods.xrCreateFoveationProfileFB(
       session_, &create_info, &standard_foveation_profile_);
+  if (XR_FAILED(result)) {
+    // The output handle is undefined on failure; never destroy or use it.
+    standard_foveation_profile_ = XR_NULL_HANDLE;
+  }
+  return result;
 }
 
 bool OpenXrApiWrapper::UpdateStandardFoveation() const {
