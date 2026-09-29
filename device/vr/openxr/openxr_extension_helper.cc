@@ -232,6 +232,9 @@ bool OpenXrExtensionHelper::IsFeatureSupported(
                                  [this](const char* extension) {
                                    return IsExtensionSupported(extension);
                                  });
+    case device::mojom::XRSessionFeature::DYNAMIC_FOVEATION:
+      return IsExtensionSupported(XR_EXT_EYE_GAZE_INTERACTION_EXTENSION_NAME) &&
+             IsExtensionSupported(XR_MNDX_FOVEATION_EXTENSION_NAME);
     default:
       // By default we assume a feature doesn't need to be supported by an
       // extension unless customized above.

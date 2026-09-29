@@ -306,6 +306,10 @@ bool IsFeatureValidForMode(device::mojom::XRSessionFeature feature,
     case device::mojom::XRSessionFeature::WEBGPU:
       return mode == device::mojom::blink::XRSessionMode::kImmersiveVr ||
              mode == device::mojom::blink::XRSessionMode::kImmersiveAr;
+    case device::mojom::XRSessionFeature::DYNAMIC_FOVEATION:
+      // Eye-gaze-driven foveation is currently implemented only for immersive
+      // VR. Keep this branch-local feature out of inline and immersive-AR.
+      return mode == device::mojom::blink::XRSessionMode::kImmersiveVr;
     case device::mojom::XRSessionFeature::DOM_OVERLAY:
       if (mode != device::mojom::blink::XRSessionMode::kImmersiveAr)
         return false;
@@ -371,6 +375,7 @@ bool HasRequiredPermissionsPolicy(ExecutionContext* context,
     case device::mojom::XRSessionFeature::LAYERS:
     case device::mojom::XRSessionFeature::FRONT_FACING:
     case device::mojom::XRSessionFeature::WEBGPU:
+    case device::mojom::XRSessionFeature::DYNAMIC_FOVEATION:
       return context->IsFeatureEnabled(
           network::mojom::PermissionsPolicyFeature::kWebXr,
           ReportOptions::kReportOnFailure);

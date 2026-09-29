@@ -322,6 +322,9 @@ class OpenXrRenderLoop : public XRThread,
   // Browser-validated UA-owned immersive media may use multiple explicit
   // composition layers without exposing the WebXR "layers" feature to pages.
   bool is_ua_immersive_media_session_ = false;
+  // True for UA-owned immersive media or a page WebXR session that explicitly
+  // requested the experimental "dynamic-foveation" session feature.
+  bool dynamic_foveation_enabled_ = false;
   bool webxr_visible_ = true;   // The browser may hide a presenting session.
   bool overlay_visible_ = false;
 

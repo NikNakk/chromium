@@ -686,8 +686,21 @@ XrResult OpenXrApiWrapper::InitSession(
                             device::mojom::XRSessionFeature::WEBGPU) ||
       std::ranges::contains(session_options_->optional_features,
                             device::mojom::XRSessionFeature::WEBGPU);
-  graphics_binding_->OnSessionCreated(
-      local_space_, webgpu_session, session_options_->is_ua_immersive_media);
+  const bool page_dynamic_foveation_requested =
+      std::ranges::contains(session_options_->required_features,
+                            device::mojom::XRSessionFeature::DYNAMIC_FOVEATION) ||
+      std::ranges::contains(session_options_->optional_features,
+                            device::mojom::XRSessionFeature::DYNAMIC_FOVEATION);
+  const bool page_dynamic_foveation_supported =
+      page_dynamic_foveation_requested &&
+      extension_helper.IsFeatureSupported(
+          device::mojom::XRSessionFeature::DYNAMIC_FOVEATION);
+  const bool allow_dynamic_foveation =
+      session_options_->is_ua_immersive_media ||
+      page_dynamic_foveation_supported;
+
+  graphics_binding_->OnSessionCreated(local_space_, webgpu_session,
+                                      allow_dynamic_foveation);
 
   // Some graphics bindings (including the macOS direct-Metal path) have no
   // copy-based fallback: their OpenXR swapchain images must be exposed as
@@ -711,9 +724,13 @@ XrResult OpenXrApiWrapper::InitSession(
                             device::mojom::XRSessionFeature::HAND_INPUT) ||
       std::ranges::contains(session_options_->optional_features,
                             device::mojom::XRSessionFeature::HAND_INPUT);
-  // Eye tracking is privileged UA input. Do not create or synchronize an
-  // eye-gaze action for page-created WebXR sessions.
-  const bool enable_eye_gaze = session_options_->is_ua_immersive_media;
+  // Eye tracking remains privileged input. Page-created sessions get an
+  // eye-gaze action only after explicitly requesting the branch-local
+  // dynamic-foveation feature and the runtime proving it can support it.
+  // The gaze pose stays inside the XR process.
+  const bool enable_eye_gaze =
+      session_options_->is_ua_immersive_media ||
+      page_dynamic_foveation_supported;
 
   RETURN_IF_XR_FAILED(OpenXRInputHelper::CreateOpenXRInputHelper(
       instance_, system_, system_properties.systemName, extension_helper,
@@ -721,10 +738,10 @@ XrResult OpenXrApiWrapper::InitSession(
       &input_helper_));
 
   // Keep policy selection above the graphics backend. Dynamic gaze-driven
-  // foveation is restricted to browser-owned immersive media sessions; page
-  // WebXR remains unfoveated until fixedFoveation is wired as an explicit,
-  // non-gaze-bearing opt-in.
-  if (enable_eye_gaze) {
+  // foveation is enabled for browser-owned immersive media and for page WebXR
+  // sessions that explicitly opted in via "dynamic-foveation". Gaze
+  // coordinates never cross into the renderer process.
+  if (allow_dynamic_foveation) {
     foveation_policy_ = extension_helper.GetFoveationPolicy(
         instance_, system_, OpenXrFoveationLevel::kAggressive);
   } else {

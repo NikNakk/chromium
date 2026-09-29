@@ -120,6 +120,7 @@ bool IsArOnlyFeature(device::mojom::XRSessionFeature feature) {
     case device::mojom::XRSessionFeature::HAND_INPUT:
     case device::mojom::XRSessionFeature::SECONDARY_VIEWS:
     case device::mojom::XRSessionFeature::WEBGPU:
+    case device::mojom::XRSessionFeature::DYNAMIC_FOVEATION:
       return false;
     case device::mojom::XRSessionFeature::DOM_OVERLAY:
     case device::mojom::XRSessionFeature::HIT_TEST:
@@ -139,6 +140,9 @@ bool IsFeatureSupportedForMode(device::mojom::XRSessionFeature feature,
                                device::mojom::XRSessionMode mode) {
   // OpenXR doesn't support inline.
   CHECK_NE(mode, device::mojom::XRSessionMode::kInline);
+  if (feature == device::mojom::XRSessionFeature::DYNAMIC_FOVEATION) {
+    return mode == device::mojom::XRSessionMode::kImmersiveVr;
+  }
   // If the feature is AR-only, then it's only supported if the mode is AR.
   if (IsArOnlyFeature(feature)) {
     return mode == device::mojom::XRSessionMode::kImmersiveAr;

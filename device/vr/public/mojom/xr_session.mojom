@@ -64,6 +64,12 @@ enum XRSessionFeature {
   FRONT_FACING = 17,
   WEBGPU = 18,
   MESH_DETECTION = 19,
+
+  // EXPERIMENTAL, branch-local feature descriptor. A page must explicitly
+  // request this feature before eye-gaze may influence its render target.
+  // Gaze coordinates are not exposed to the renderer; the effect is applied
+  // through the privileged OpenXR/graphics path.
+  DYNAMIC_FOVEATION = 20,
 };
 
 // These values are persisted to logs. Entries should not be renumbered and

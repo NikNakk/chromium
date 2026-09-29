@@ -35,7 +35,8 @@ const std::vector<mojom::XRSessionFeature>& GetSupportedFeatures() {
                           mojom::XRSessionFeature::SECONDARY_VIEWS,
                           mojom::XRSessionFeature::HIT_TEST,
                           mojom::XRSessionFeature::LIGHT_ESTIMATION,
-                          mojom::XRSessionFeature::DEPTH}};
+                          mojom::XRSessionFeature::DEPTH,
+                          mojom::XRSessionFeature::DYNAMIC_FOVEATION}};
 
   return *kSupportedFeatures;
 }

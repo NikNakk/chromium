@@ -214,6 +214,10 @@ std::optional<device::mojom::XRSessionFeature> StringToXRSessionFeature(
     return device::mojom::XRSessionFeature::FRONT_FACING;
   } else if (feature_string == "webgpu") {
     return device::mojom::XRSessionFeature::WEBGPU;
+  } else if (feature_string == "dynamic-foveation") {
+    // EXPERIMENTAL: branch-local WebXR feature descriptor. This is deliberately
+    // session-scoped so arbitrary pages do not receive gaze-driven foveation.
+    return device::mojom::XRSessionFeature::DYNAMIC_FOVEATION;
   }
 
   return std::nullopt;
@@ -259,6 +263,8 @@ StringView XRSessionFeatureToString(device::mojom::XRSessionFeature feature) {
       return "front-facing";
     case device::mojom::XRSessionFeature::WEBGPU:
       return "webgpu";
+    case device::mojom::XRSessionFeature::DYNAMIC_FOVEATION:
+      return "dynamic-foveation";
   }
 
   return "";
@@ -279,6 +285,7 @@ bool IsFeatureEnabledForContext(device::mojom::XRSessionFeature feature,
       return RuntimeEnabledFeatures::WebXRGPUBindingEnabled(context);
     case device::mojom::XRSessionFeature::FRONT_FACING:
       return RuntimeEnabledFeatures::WebXRFrontFacingEnabled(context);
+    case device::mojom::XRSessionFeature::DYNAMIC_FOVEATION:
     case device::mojom::XRSessionFeature::HAND_INPUT:
     case device::mojom::XRSessionFeature::HIT_TEST:
     case device::mojom::XRSessionFeature::LIGHT_ESTIMATION:
