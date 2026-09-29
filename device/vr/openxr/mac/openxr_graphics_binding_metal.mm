@@ -42,8 +42,11 @@ namespace device {
 
 namespace {
 
-constexpr char kFoveationMetadataKey[] =
-    "org.chromium.openxr.metal-foveation-v1";
+// IOSurface keys shared with the ANGLE Metal bridge
+// (apply_angle_metal_foveation.py). The metadata dictionary carries
+// "version": kFoveationMetadataVersion; ANGLE writes the serial of the
+// metadata it actually rendered with under the "-applied" key.
+constexpr uint32_t kFoveationMetadataVersion = 2;
 constexpr uint32_t kFoveationMetadataZoneCount = 16;
 
 constexpr MTLPixelFormat kSupportedFormats[] = {
@@ -298,6 +301,53 @@ void OpenXrGraphicsBinding::GetRequiredExtensions(
 
 class OpenXrGraphicsBindingMetal::Impl {
  public:
+  // Rebuilds the runtime's rate map from its transported recipe and checks
+  // that it reproduces the runtime's physical size on this device. The last
+  // validated recipe is cached because it only changes with the map.
+  bool ValidateResolvedFoveation(const OpenXrResolvedFoveationRateMap& state) {
+    if (validated_foveation &&
+        validated_foveation->logical_size == state.logical_size &&
+        validated_foveation->physical_size == state.physical_size &&
+        validated_foveation->horizontal_rates == state.horizontal_rates &&
+        validated_foveation->vertical_rates == state.vertical_rates) {
+      return true;
+    }
+    validated_foveation.reset();
+
+    if (device == nil ||
+        ![device supportsRasterizationRateMapWithLayerCount:1] ||
+        state.horizontal_rates.size() != state.vertical_rates.size()) {
+      return false;
+    }
+    const NSUInteger samples = state.horizontal_rates.size();
+    MTLRasterizationRateLayerDescriptor* layer =
+        [[MTLRasterizationRateLayerDescriptor alloc]
+            initWithSampleCount:MTLSizeMake(samples, samples, 1)
+                     horizontal:state.horizontal_rates.data()
+                       vertical:state.vertical_rates.data()];
+    MTLRasterizationRateMapDescriptor* descriptor =
+        [[MTLRasterizationRateMapDescriptor alloc] init];
+    descriptor.screenSize = MTLSizeMake(state.logical_size.width(),
+                                        state.logical_size.height(), 1);
+    [descriptor setLayer:layer atIndex:0];
+    id<MTLRasterizationRateMap> map =
+        [device newRasterizationRateMapWithDescriptor:descriptor];
+    if (map == nil) {
+      return false;
+    }
+    const MTLSize physical = [map physicalSizeForLayer:0];
+    if (physical.width != static_cast<NSUInteger>(state.physical_size.width()) ||
+        physical.height !=
+            static_cast<NSUInteger>(state.physical_size.height())) {
+      return false;
+    }
+    validated_foveation = state;
+    return true;
+  }
+
+  std::optional<OpenXrResolvedFoveationRateMap> validated_foveation;
+  uint64_t next_foveation_serial = 1;
+
   id<MTLDevice> __strong device = nil;
   id<MTLCommandQueue> __strong command_queue = nil;
   XrGraphicsBindingMetalKHR binding{XR_TYPE_GRAPHICS_BINDING_METAL_KHR};
@@ -1144,19 +1194,19 @@ void OpenXrGraphicsBindingMetal::CreateSharedImages(
   }
 }
 
-bool OpenXrGraphicsBindingMetal::PublishBaseLayerFoveation(
-    const OpenXrFoveationTargetConfig& config) {
-  if (!base_layer_ || config.logical_size.IsEmpty() ||
-      config.centers.empty()) {
-    return false;
+IOSurfaceRef OpenXrGraphicsBindingMetal::GetActiveBaseLayerRenderSurface() {
+  if (!base_layer_) {
+    return nullptr;
   }
 
   OpenXrSwapchainInfo* swapchain_info =
       base_layer_->GetActiveSwapchainImage();
   if (!swapchain_info || !swapchain_info->metal_texture) {
-    return false;
+    return nullptr;
   }
 
+  // Blink renders into the Chromium-owned fallback IOSurface when the runtime
+  // texture is not directly shareable; that is the surface ANGLE reads.
   id<MTLTexture> render_texture = nil;
   auto fallback =
       impl_->fallback_textures.find(swapchain_info->metal_texture.get());
@@ -1166,29 +1216,26 @@ bool OpenXrGraphicsBindingMetal::PublishBaseLayerFoveation(
     render_texture =
         (__bridge id<MTLTexture>)swapchain_info->metal_texture.get();
   }
+  return render_texture ? render_texture.iosurface : nullptr;
+}
 
-  IOSurfaceRef surface = render_texture ? render_texture.iosurface : nullptr;
-  if (!surface) {
-    DLOG(WARNING) << __func__
-                  << ": active WebXR render texture is not IOSurface-backed";
+bool OpenXrGraphicsBindingMetal::PublishFoveationMetadata(
+    const gfx::Size& logical_size,
+    const gfx::Size& physical_size,
+    base::span<const float> horizontal_rates,
+    base::span<const float> vertical_rates) {
+  if (logical_size.IsEmpty() || physical_size.IsEmpty() ||
+      physical_size.width() > logical_size.width() ||
+      physical_size.height() > logical_size.height() ||
+      horizontal_rates.size() != kFoveationMetadataZoneCount ||
+      vertical_rates.size() != kFoveationMetadataZoneCount) {
     return false;
   }
 
-  std::vector<float> horizontal_centers;
-  std::vector<float> vertical_centers;
-  horizontal_centers.reserve(config.centers.size());
-  vertical_centers.reserve(config.centers.size());
-  for (const gfx::PointF& center : config.centers) {
-    horizontal_centers.push_back(center.x());
-    vertical_centers.push_back(center.y());
-  }
-
-  std::array<float, kFoveationMetadataZoneCount> horizontal_rates;
-  std::array<float, kFoveationMetadataZoneCount> vertical_rates;
-  if (!BuildOpenXrFoveationAxisRates(config.policy, horizontal_centers,
-                                      horizontal_rates) ||
-      !BuildOpenXrFoveationAxisRates(config.policy, vertical_centers,
-                                      vertical_rates)) {
+  IOSurfaceRef surface = GetActiveBaseLayerRenderSurface();
+  if (!surface) {
+    DLOG(WARNING) << __func__
+                  << ": active WebXR render texture is not IOSurface-backed";
     return false;
   }
 
@@ -1201,24 +1248,63 @@ bool OpenXrGraphicsBindingMetal::PublishBaseLayerFoveation(
     [vertical addObject:@(vertical_rates[i])];
   }
 
+  // Graphics state only: sizes, per-axis rates and a publish serial. The
+  // physical size is what the OpenXR compositor will assume, so the renderer
+  // can refuse a reconstruction that differs. No gaze is ever included.
+  const uint64_t serial = impl_->next_foveation_serial++;
   NSDictionary* metadata = @{
-    @"version" : @1,
-    @"logical_width" : @(config.logical_size.width()),
-    @"logical_height" : @(config.logical_size.height()),
+    @"version" : @(kFoveationMetadataVersion),
+    @"logical_width" : @(logical_size.width()),
+    @"logical_height" : @(logical_size.height()),
+    @"physical_width" : @(physical_size.width()),
+    @"physical_height" : @(physical_size.height()),
     @"zone_count" : @(kFoveationMetadataZoneCount),
     @"horizontal" : horizontal,
     @"vertical" : vertical,
+    @"serial" : @(serial),
   };
-  NSString* key = [NSString stringWithUTF8String:kFoveationMetadataKey];
-  IOSurfaceSetValue(surface, (__bridge CFStringRef)key,
+  // Drop any acknowledgement from an earlier render of this image first.
+  IOSurfaceRemoveValue(surface, CFSTR("org.chromium.openxr.metal-foveation-applied"));
+  IOSurfaceSetValue(surface, CFSTR("org.chromium.openxr.metal-foveation-v1"),
                     (__bridge CFTypeRef)metadata);
 
-  DVLOG(3) << __func__ << ": published "
-           << kFoveationMetadataZoneCount << "x"
-           << kFoveationMetadataZoneCount
-           << " WebXR foveation metadata for "
-           << config.logical_size.ToString();
+  DVLOG(3) << __func__ << ": published " << kFoveationMetadataZoneCount << "x"
+           << kFoveationMetadataZoneCount << " foveation metadata logical="
+           << logical_size.ToString() << " physical="
+           << physical_size.ToString() << " serial=" << serial;
   return true;
+}
+
+bool OpenXrGraphicsBindingMetal::PublishBaseLayerFoveation(
+    const OpenXrFoveationTargetConfig& config,
+    const gfx::Size& physical_size) {
+  if (!base_layer_ || config.logical_size.IsEmpty() ||
+      config.centers.empty()) {
+    return false;
+  }
+
+  std::vector<float> horizontal_centers;
+  std::vector<float> vertical_centers;
+  horizontal_centers.reserve(config.centers.size());
+  vertical_centers.reserve(config.centers.size());
+  for (const gfx::PointF& center : config.centers) {
+    horizontal_centers.push_back(center.x());
+    vertical_centers.push_back(center.y());
+  }
+
+  // Same builder as OpenXrFoveationBackendMetal, so the published recipe is
+  // exactly the one behind the legacy compositor mapping.
+  std::array<float, kFoveationMetadataZoneCount> horizontal_rates;
+  std::array<float, kFoveationMetadataZoneCount> vertical_rates;
+  if (!BuildOpenXrFoveationAxisRates(config.policy, horizontal_centers,
+                                      horizontal_rates) ||
+      !BuildOpenXrFoveationAxisRates(config.policy, vertical_centers,
+                                      vertical_rates)) {
+    return false;
+  }
+
+  return PublishFoveationMetadata(config.logical_size, physical_size,
+                                  horizontal_rates, vertical_rates);
 }
 
 bool OpenXrGraphicsBindingMetal::PublishBaseLayerResolvedFoveation(
@@ -1229,80 +1315,54 @@ bool OpenXrGraphicsBindingMetal::PublishBaseLayerResolvedFoveation(
     return false;
   }
 
-  OpenXrSwapchainInfo* swapchain_info =
-      base_layer_->GetActiveSwapchainImage();
-  if (!swapchain_info || !swapchain_info->metal_texture) {
+  // The runtime's compositor will sample with its own map. Rebuild the map
+  // from the transported recipe on this device and refuse to publish if the
+  // physical extent differs, rather than render with a different transform.
+  if (!impl_->ValidateResolvedFoveation(state)) {
+    LOG(ERROR) << "Runtime Metal foveation recipe does not reproduce its "
+                  "physical size "
+               << state.physical_size.ToString() << "; rendering unfoveated";
     return false;
   }
 
-  id<MTLTexture> render_texture = nil;
-  auto fallback =
-      impl_->fallback_textures.find(swapchain_info->metal_texture.get());
-  if (fallback != impl_->fallback_textures.end()) {
-    render_texture = fallback->second;
-  } else {
-    render_texture =
-        (__bridge id<MTLTexture>)swapchain_info->metal_texture.get();
-  }
-
-  IOSurfaceRef surface = render_texture ? render_texture.iosurface : nullptr;
-  if (!surface) {
-    DLOG(WARNING) << __func__
-                  << ": active WebXR render texture is not IOSurface-backed";
-    return false;
-  }
-
-  NSMutableArray<NSNumber*>* horizontal =
-      [NSMutableArray arrayWithCapacity:kFoveationMetadataZoneCount];
-  NSMutableArray<NSNumber*>* vertical =
-      [NSMutableArray arrayWithCapacity:kFoveationMetadataZoneCount];
-  for (uint32_t i = 0; i < kFoveationMetadataZoneCount; ++i) {
-    [horizontal addObject:@(state.horizontal_rates[i])];
-    [vertical addObject:@(state.vertical_rates[i])];
-  }
-
-  NSDictionary* metadata = @{
-    @"version" : @1,
-    @"logical_width" : @(state.logical_size.width()),
-    @"logical_height" : @(state.logical_size.height()),
-    @"zone_count" : @(kFoveationMetadataZoneCount),
-    @"horizontal" : horizontal,
-    @"vertical" : vertical,
-  };
-  NSString* key = [NSString stringWithUTF8String:kFoveationMetadataKey];
-  IOSurfaceSetValue(surface, (__bridge CFStringRef)key,
-                    (__bridge CFTypeRef)metadata);
-  return true;
+  return PublishFoveationMetadata(state.logical_size, state.physical_size,
+                                  state.horizontal_rates,
+                                  state.vertical_rates);
 }
 
 void OpenXrGraphicsBindingMetal::ClearPublishedBaseLayerFoveation() {
-  if (!base_layer_) {
-    return;
-  }
-
-  OpenXrSwapchainInfo* swapchain_info =
-      base_layer_->GetActiveSwapchainImage();
-  if (!swapchain_info || !swapchain_info->metal_texture) {
-    return;
-  }
-
-  id<MTLTexture> render_texture = nil;
-  auto fallback =
-      impl_->fallback_textures.find(swapchain_info->metal_texture.get());
-  if (fallback != impl_->fallback_textures.end()) {
-    render_texture = fallback->second;
-  } else {
-    render_texture =
-        (__bridge id<MTLTexture>)swapchain_info->metal_texture.get();
-  }
-
-  IOSurfaceRef surface = render_texture ? render_texture.iosurface : nullptr;
+  IOSurfaceRef surface = GetActiveBaseLayerRenderSurface();
   if (!surface) {
     return;
   }
 
-  NSString* key = [NSString stringWithUTF8String:kFoveationMetadataKey];
-  IOSurfaceRemoveValue(surface, (__bridge CFStringRef)key);
+  IOSurfaceRemoveValue(surface, CFSTR("org.chromium.openxr.metal-foveation-v1"));
+  IOSurfaceRemoveValue(surface, CFSTR("org.chromium.openxr.metal-foveation-applied"));
+}
+
+OpenXrGraphicsBinding::FoveationRenderStatus
+OpenXrGraphicsBindingMetal::GetBaseLayerFoveationRenderStatus() {
+  IOSurfaceRef surface = GetActiveBaseLayerRenderSurface();
+  if (!surface) {
+    return FoveationRenderStatus::kNone;
+  }
+
+  // ANGLE removes the metadata when it refuses it, and records the serial of
+  // the metadata it actually rendered with.
+  NSDictionary* metadata = CFBridgingRelease(
+      IOSurfaceCopyValue(surface, CFSTR("org.chromium.openxr.metal-foveation-v1")));
+  if (![metadata isKindOfClass:[NSDictionary class]]) {
+    return FoveationRenderStatus::kNone;
+  }
+  NSNumber* serial = metadata[@"serial"];
+  NSNumber* applied = CFBridgingRelease(IOSurfaceCopyValue(
+      surface, CFSTR("org.chromium.openxr.metal-foveation-applied")));
+  if ([serial isKindOfClass:[NSNumber class]] &&
+      [applied isKindOfClass:[NSNumber class]] &&
+      [applied unsignedLongLongValue] == [serial unsignedLongLongValue]) {
+    return FoveationRenderStatus::kApplied;
+  }
+  return FoveationRenderStatus::kNotApplied;
 }
 
 bool OpenXrGraphicsBindingMetal::ShouldFlipSubmittedImage(

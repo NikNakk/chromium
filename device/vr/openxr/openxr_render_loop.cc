@@ -758,6 +758,13 @@ mojom::XRFrameDataPtr OpenXrRenderLoop::GetNextFrameData() {
         openxr_->IsFeatureEnabled(mojom::XRSessionFeature::DYNAMIC_FOVEATION)) {
       openxr_->UpdateFoveation();
     }
+  } else if (is_ua_immersive_media_session_ ||
+             openxr_->IsFeatureEnabled(
+                 mojom::XRSessionFeature::DYNAMIC_FOVEATION)) {
+    // Blurred/hidden: render unfoveated so nothing gaze-dependent can be
+    // observed while the page is not focused, and so no stale map is paired
+    // with the frame.
+    openxr_->SuspendFoveation();
   }
 
   frame_data->render_info->mojo_from_viewer = openxr_->GetViewerPose();

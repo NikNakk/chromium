@@ -5,9 +5,12 @@
 #ifndef DEVICE_VR_OPENXR_MAC_OPENXR_GRAPHICS_BINDING_METAL_H_
 #define DEVICE_VR_OPENXR_MAC_OPENXR_GRAPHICS_BINDING_METAL_H_
 
+#include <IOSurface/IOSurfaceRef.h>
+
 #include <cstdint>
 #include <memory>
 
+#include "base/containers/span.h"
 #include "device/vr/openxr/openxr_graphics_binding.h"
 #include "device/vr/vr_export.h"
 
@@ -55,15 +58,23 @@ class DEVICE_VR_EXPORT OpenXrGraphicsBindingMetal
   void CreateSharedImages(OpenXrCompositionLayer& layer,
                           gpu::SharedImageInterface* sii) override;
   bool ShouldFlipSubmittedImage(OpenXrCompositionLayer& layer) const override;
-  bool PublishBaseLayerFoveation(
-      const OpenXrFoveationTargetConfig& config) override;
+  bool PublishBaseLayerFoveation(const OpenXrFoveationTargetConfig& config,
+                                 const gfx::Size& physical_size) override;
   bool PublishBaseLayerResolvedFoveation(
       const OpenXrResolvedFoveationRateMap& state) override;
   void ClearPublishedBaseLayerFoveation() override;
+  FoveationRenderStatus GetBaseLayerFoveationRenderStatus() override;
   std::unique_ptr<OpenXrCompositionLayer::GraphicsBindingData>
   CreateLayerGraphicsBindingData() const override;
 
  private:
+  // The IOSurface Blink/ANGLE renders the acquired base-layer image into.
+  IOSurfaceRef GetActiveBaseLayerRenderSurface();
+  bool PublishFoveationMetadata(const gfx::Size& logical_size,
+                                const gfx::Size& physical_size,
+                                base::span<const float> horizontal_rates,
+                                base::span<const float> vertical_rates);
+
   class Impl;
   std::unique_ptr<Impl> impl_;
   mutable int64_t swapchain_format_ = 0;

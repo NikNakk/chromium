@@ -211,7 +211,11 @@ void OpenXrApiWrapper::Reset() {
   // Uninitialize() destroys the profile before the session; Reset() never
   // discards a live handle.
   DCHECK_EQ(standard_foveation_profile_, XR_NULL_HANDLE);
+  DCHECK_EQ(standard_foveation_none_profile_, XR_NULL_HANDLE);
   standard_foveation_profile_ = XR_NULL_HANDLE;
+  standard_foveation_none_profile_ = XR_NULL_HANDLE;
+  standard_foveation_selected_ = false;
+  foveation_disabled_for_session_ = false;
   foveation_fixed_center_ = false;
 
   session_options_.reset();
@@ -283,12 +287,15 @@ void OpenXrApiWrapper::Uninitialize() {
   // while the session is still valid. If the destroy entry point is
   // unavailable the profile dies with the session; either way drop the handle
   // so nothing can use it after xrDestroySession().
-  if (standard_foveation_profile_ != XR_NULL_HANDLE && extension_helper_ &&
-      extension_helper_->ExtensionMethods().xrDestroyFoveationProfileFB) {
-    extension_helper_->ExtensionMethods().xrDestroyFoveationProfileFB(
-        standard_foveation_profile_);
+  for (XrFoveationProfileFB* profile :
+       {&standard_foveation_profile_, &standard_foveation_none_profile_}) {
+    if (*profile != XR_NULL_HANDLE && extension_helper_ &&
+        extension_helper_->ExtensionMethods().xrDestroyFoveationProfileFB) {
+      extension_helper_->ExtensionMethods().xrDestroyFoveationProfileFB(
+          *profile);
+    }
+    *profile = XR_NULL_HANDLE;
   }
-  standard_foveation_profile_ = XR_NULL_HANDLE;
 
   // Destroying an session in OpenXr also destroys all child objects of that
   // instance (including the swapchain, and spaces objects),
@@ -964,16 +971,39 @@ XrResult OpenXrApiWrapper::CreateStandardFoveationProfile(
   XrFoveationProfileCreateInfoFB create_info{
       XR_TYPE_FOVEATION_PROFILE_CREATE_INFO_FB};
   create_info.next = &level_info;
-  const XrResult result = methods.xrCreateFoveationProfileFB(
+  XrResult result = methods.xrCreateFoveationProfileFB(
       session_, &create_info, &standard_foveation_profile_);
   if (XR_FAILED(result)) {
     // The output handle is undefined on failure; never destroy or use it.
+    standard_foveation_profile_ = XR_NULL_HANDLE;
+    return result;
+  }
+
+  // A NONE profile lets a frame be rendered and composited unfoveated, which
+  // also clears the runtime's Metal map selection for the swapchain. Without
+  // it the standard path cannot fail safely, so treat it as required.
+  XrFoveationLevelProfileCreateInfoFB none_level_info{
+      XR_TYPE_FOVEATION_LEVEL_PROFILE_CREATE_INFO_FB};
+  none_level_info.level = XR_FOVEATION_LEVEL_NONE_FB;
+  none_level_info.verticalOffset = 0.0f;
+  none_level_info.dynamic = XR_FOVEATION_DYNAMIC_DISABLED_FB;
+  XrFoveationProfileCreateInfoFB none_create_info{
+      XR_TYPE_FOVEATION_PROFILE_CREATE_INFO_FB};
+  none_create_info.next = &none_level_info;
+  DCHECK_EQ(standard_foveation_none_profile_, XR_NULL_HANDLE);
+  result = methods.xrCreateFoveationProfileFB(
+      session_, &none_create_info, &standard_foveation_none_profile_);
+  if (XR_FAILED(result)) {
+    standard_foveation_none_profile_ = XR_NULL_HANDLE;
+    if (methods.xrDestroyFoveationProfileFB) {
+      methods.xrDestroyFoveationProfileFB(standard_foveation_profile_);
+    }
     standard_foveation_profile_ = XR_NULL_HANDLE;
   }
   return result;
 }
 
-bool OpenXrApiWrapper::UpdateStandardFoveation() const {
+bool OpenXrApiWrapper::UpdateStandardFoveation() {
   if (!standard_foveation_enabled_ ||
       standard_foveation_profile_ == XR_NULL_HANDLE || !extension_helper_ ||
       !HasFrameState()) {
@@ -1041,10 +1071,16 @@ bool OpenXrApiWrapper::UpdateStandardFoveation() const {
   packed.viewCount = static_cast<uint32_t>(image_rects.size());
   packed.views = packed_views.data();
 
+  // Querying selects the returned map for this swapchain: the runtime binds it
+  // to the image when it is released. A failed or disabled result clears
+  // that selection.
   XrFoveationMetalStateMNDX metal{XR_TYPE_FOVEATION_METAL_STATE_MNDX};
   metal.next = &packed;
-  if (XR_FAILED(methods.xrGetFoveationMetalStateMNDX(
-          swapchain, 0, 0, &metal)) ||
+  const XrResult query_result =
+      methods.xrGetFoveationMetalStateMNDX(swapchain, 0, 0, &metal);
+  standard_foveation_selected_ =
+      XR_SUCCEEDED(query_result) && metal.foveationEnabled == XR_TRUE;
+  if (XR_FAILED(query_result) ||
       metal.foveationEnabled != XR_TRUE ||
       packed.horizontalSampleCount == 0 ||
       packed.horizontalSampleCount >
@@ -1505,6 +1541,10 @@ XrResult OpenXrApiWrapper::EndFrame() {
   DCHECK(HasSpace(XR_REFERENCE_SPACE_TYPE_LOCAL));
   DCHECK(HasFrameState());
 
+  // Must run before the layers (and their legacy foveation maps) are built
+  // and before the base image is released to the runtime.
+  VerifyFoveationBeforeRelease();
+
   // Get all the XrCompositionLayer* from the base layer or the
   // layers created by clients. All the projection layers will use
   // the same view configuration defined by primary_view_config_.
@@ -1791,14 +1831,110 @@ std::vector<mojom::XRInputSourceStatePtr> OpenXrApiWrapper::GetInputState() {
   return input_helper_->GetInputState(GetPredictedDisplayTime());
 }
 
-void OpenXrApiWrapper::UpdateFoveation() const {
+void OpenXrApiWrapper::ApplyStandardFoveationNone() {
+  if (!standard_foveation_selected_) {
+    return;
+  }
+  const auto& methods = extension_helper_->ExtensionMethods();
+  const XrSwapchain swapchain =
+      graphics_binding_->GetBaseLayerColorSwapchain();
+  if (standard_foveation_none_profile_ == XR_NULL_HANDLE ||
+      !methods.xrUpdateSwapchainFB || swapchain == XR_NULL_HANDLE) {
+    return;
+  }
+  XrSwapchainStateFoveationFB update{XR_TYPE_SWAPCHAIN_STATE_FOVEATION_FB};
+  update.profile = standard_foveation_none_profile_;
+  if (XR_SUCCEEDED(methods.xrUpdateSwapchainFB(
+          swapchain,
+          reinterpret_cast<const XrSwapchainStateBaseHeaderFB*>(&update)))) {
+    // Disabling foveation clears the runtime's map selection.
+    standard_foveation_selected_ = false;
+  } else {
+    // The runtime would pair a foveated map with unfoveated pixels.
+    LOG(ERROR) << "Could not disable OpenXR foveation for the base swapchain";
+  }
+}
+
+void OpenXrApiWrapper::ClearFoveationForFrame() {
+  if (standard_foveation_enabled_) {
+    // A reacquired, still-presented image keeps its pixels, its metadata and
+    // the runtime's binding for it; touching either would split them.
+    if (graphics_binding_->IsBaseLayerActiveImageLastReleased()) {
+      return;
+    }
+    ApplyStandardFoveationNone();
+  }
+  graphics_binding_->ClearBaseLayerFoveation();
+}
+
+void OpenXrApiWrapper::SuspendFoveation() {
+  ClearFoveationForFrame();
+}
+
+void OpenXrApiWrapper::VerifyFoveationBeforeRelease() {
+  if (!graphics_binding_->IsBaseLayerRendered() ||
+      (!standard_foveation_enabled_ && !foveation_policy_)) {
+    return;
+  }
+
+  const auto status = graphics_binding_->GetBaseLayerFoveationRenderStatus();
+  if (status == OpenXrGraphicsBinding::FoveationRenderStatus::kApplied) {
+    return;
+  }
+
+  // The renderer drew this image unfoveated (for example ANGLE refused the
+  // recipe, or the content did not go through the patched ANGLE path).
+  // Composite it unfoveated too, and stop foveating for this session.
+  const bool compositor_expects_foveation =
+      standard_foveation_enabled_
+          ? standard_foveation_selected_
+          : graphics_binding_->HasBaseLayerFoveationMapping();
+  if (status == OpenXrGraphicsBinding::FoveationRenderStatus::kNone &&
+      !compositor_expects_foveation) {
+    return;
+  }
+  LOG(ERROR) << "XR foveation was not applied by the renderer; compositing "
+                "this frame unfoveated and disabling foveation for the session";
+  if (standard_foveation_enabled_) {
+    ApplyStandardFoveationNone();
+  }
+  graphics_binding_->ClearBaseLayerFoveation();
+  foveation_disabled_for_session_ = true;
+}
+
+void OpenXrApiWrapper::UpdateFoveation() {
   auto disable_foveation = [this]() {
     graphics_binding_->ClearBaseLayerFoveation();
   };
 
+  if (foveation_disabled_for_session_) {
+    ClearFoveationForFrame();
+    return;
+  }
+
   if (standard_foveation_enabled_) {
+    // Nothing renders into the base layer this frame (e.g. WebXR layers are
+    // active); leave the runtime state alone rather than toggle it.
+    if (!graphics_binding_->HasBaseLayerActiveImage()) {
+      return;
+    }
+    // The runtime handed back the image it is still presenting. It already
+    // carries the map it was rendered with (pixels, IOSurface metadata and
+    // runtime binding agree). Querying a new map now would make the runtime
+    // bind that newer map when this image is re-released unrendered, so
+    // leave all three untouched for this frame.
+    if (graphics_binding_->IsBaseLayerActiveImageLastReleased()) {
+      return;
+    }
     if (!UpdateStandardFoveation()) {
-      disable_foveation();
+      // Failures here are configuration problems, not transient gaze loss
+      // (the runtime falls back to a fixed centre itself). Switching the
+      // runtime between profiles every frame would also restart its eye
+      // tracker, so stay unfoveated for the rest of the session.
+      LOG(ERROR) << "Standard OpenXR foveation update failed; disabling "
+                    "foveation for this session";
+      ClearFoveationForFrame();
+      foveation_disabled_for_session_ = true;
     }
     return;
   }

@@ -78,7 +78,8 @@ bool OpenXrGraphicsBinding::ConfigureBaseLayerFoveation(
   config.centers.assign(target_centers.begin(), target_centers.end());
 
   auto state = foveation_backend_->ConfigureTarget(0, config);
-  if (!state || !state->mapping || !PublishBaseLayerFoveation(config)) {
+  if (!state || !state->mapping ||
+      !PublishBaseLayerFoveation(config, state->physical_size)) {
     ClearBaseLayerFoveation();
     return false;
   }
@@ -110,8 +111,26 @@ void OpenXrGraphicsBinding::ClearBaseLayerFoveation() {
 }
 
 bool OpenXrGraphicsBinding::PublishBaseLayerFoveation(
-    const OpenXrFoveationTargetConfig& config) {
+    const OpenXrFoveationTargetConfig& config,
+    const gfx::Size& physical_size) {
   return true;
+}
+
+OpenXrGraphicsBinding::FoveationRenderStatus
+OpenXrGraphicsBinding::GetBaseLayerFoveationRenderStatus() {
+  return FoveationRenderStatus::kNone;
+}
+
+bool OpenXrGraphicsBinding::IsBaseLayerRendered() const {
+  return base_layer_ && base_layer_->is_rendered();
+}
+
+bool OpenXrGraphicsBinding::HasBaseLayerActiveImage() {
+  return base_layer_ && base_layer_->GetActiveSwapchainImage() != nullptr;
+}
+
+bool OpenXrGraphicsBinding::IsBaseLayerActiveImageLastReleased() const {
+  return base_layer_ && base_layer_->active_swapchain_image_is_last_released();
 }
 
 bool OpenXrGraphicsBinding::PublishBaseLayerResolvedFoveation(

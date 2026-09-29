@@ -113,7 +113,11 @@ class OpenXrApiWrapper {
   std::vector<mojom::XRViewPtr> GetViews() const;
   mojom::VRPosePtr GetViewerPose() const;
   std::vector<mojom::XRInputSourceStatePtr> GetInputState();
-  void UpdateFoveation() const;
+  // Per-frame foveation update after the base image is acquired. Only called
+  // for visible frames; SuspendFoveation() renders other frames unfoveated so
+  // no gaze-dependent rendering happens while the page is blurred or hidden.
+  void UpdateFoveation();
+  void SuspendFoveation();
   void OnHideInputSources();
 
   std::vector<mojom::XRViewPtr> GetDefaultViews() const;
@@ -174,7 +178,14 @@ class OpenXrApiWrapper {
   XrResult CreateSwapchain();
   XrResult CreateStandardFoveationProfile(OpenXrFoveationLevel level,
                                           bool eye_tracked);
-  bool UpdateStandardFoveation() const;
+  bool UpdateStandardFoveation();
+  // Moves the runtime to an unfoveated state for the base swapchain, clearing
+  // its map selection so the next released image is sampled unfoveated.
+  void ApplyStandardFoveationNone();
+  void ClearFoveationForFrame();
+  // Before releasing a rendered base image, make sure the renderer applied
+  // exactly the map the runtime/compositor will pair with it.
+  void VerifyFoveationBeforeRelease();
   bool RecomputeSwapchainSizeAndViewports();
   XrResult CreateSpace(XrReferenceSpaceType type, XrSpace* space);
 
@@ -228,6 +239,14 @@ class OpenXrApiWrapper {
   bool standard_foveation_enabled_ = false;
   bool standard_foveation_eye_tracked_ = false;
   XrFoveationProfileFB standard_foveation_profile_ = XR_NULL_HANDLE;
+  // XR_FOVEATION_LEVEL_NONE_FB profile used to disable foveation for a frame.
+  XrFoveationProfileFB standard_foveation_none_profile_ = XR_NULL_HANDLE;
+  // True while the runtime's selected Metal map for the base swapchain is a
+  // foveated one, i.e. the next released image would be sampled foveated.
+  bool standard_foveation_selected_ = false;
+  // Set once the renderer failed to apply a published map; foveation stays
+  // off for the rest of the session instead of toggling every frame.
+  bool foveation_disabled_for_session_ = false;
   // Legacy diagnostic fixed mode keeps the centre on each view's optical axis.
   bool foveation_fixed_center_ = false;
 

@@ -160,6 +160,36 @@ class OpenXrGraphicsBinding {
       const OpenXrResolvedFoveationRateMap& state);
   void ClearBaseLayerFoveation();
 
+  // What the renderer did with the foveation metadata published on the
+  // currently acquired base-layer image. Checked before the image is released
+  // so the runtime/compositor never samples it with a map it was not
+  // rendered with.
+  enum class FoveationRenderStatus {
+    // No metadata on the image: it was rendered unfoveated.
+    kNone,
+    // The renderer acknowledged rendering with the published rate map.
+    kApplied,
+    // Metadata is present but the renderer did not apply it.
+    kNotApplied,
+  };
+  virtual FoveationRenderStatus GetBaseLayerFoveationRenderStatus();
+
+  // True when a legacy compositor mapping is attached to the current frame.
+  bool HasBaseLayerFoveationMapping() const {
+    return current_base_foveation_mapping_.has_value();
+  }
+
+  bool IsBaseLayerRendered() const;
+
+  // True when a base-layer image is acquired for rendering this frame. With
+  // WebXR layers active the base layer is not rendered and has none.
+  bool HasBaseLayerActiveImage();
+
+  // True when the runtime handed back the image that was released last. It
+  // still holds the previously presented pixels, and the runtime has already
+  // associated it with the foveation map it was rendered with.
+  bool IsBaseLayerActiveImageLastReleased() const;
+
   // Resizes the shared buffer for the given swapchain info if the transfer size
   // has changed.
   virtual void ResizeSharedBuffer(OpenXrCompositionLayer& layer,
@@ -349,7 +379,8 @@ class OpenXrGraphicsBinding {
   // projection image. Generic policy stays above this boundary; platform
   // bindings choose how the renderer process receives it.
   virtual bool PublishBaseLayerFoveation(
-      const OpenXrFoveationTargetConfig& config);
+      const OpenXrFoveationTargetConfig& config,
+      const gfx::Size& physical_size);
   virtual bool PublishBaseLayerResolvedFoveation(
       const OpenXrResolvedFoveationRateMap& state);
   virtual void ClearPublishedBaseLayerFoveation();
