@@ -192,6 +192,8 @@ std::string GetPermissionRequestString(RequestTypeForUma type) {
       return "GeolocationApproximate";
     case RequestTypeForUma::PERMISSION_GEOLOCATION_UPGRADE:
       return "GeolocationUpgrade";
+    case RequestTypeForUma::PERMISSION_EYE_TRACKING:
+      return "EyeTracking";
 
     case RequestTypeForUma::UNKNOWN:
     case RequestTypeForUma::NUM:
