@@ -46,12 +46,12 @@ class FakeScreen : public display::Screen {
   gfx::Point GetCursorScreenPoint() override { return gfx::Point(); }
   bool IsWindowUnderCursor(gfx::NativeWindow window) override { return false; }
   gfx::NativeWindow GetWindowAtScreenPoint(const gfx::Point& point) override {
-    return nullptr;
+    return gfx::NativeWindow();
   }
   gfx::NativeWindow GetLocalProcessWindowAtPoint(
       const gfx::Point& point,
       const std::set<gfx::NativeWindow>& ignore) override {
-    return nullptr;
+    return gfx::NativeWindow();
   }
   display::Display GetDisplayNearestWindow(
       gfx::NativeWindow window) const override {
