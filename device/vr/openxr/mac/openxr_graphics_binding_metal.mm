@@ -822,18 +822,17 @@ bool OpenXrGraphicsBindingMetal::Initialize(XrInstance instance,
     return false;
   }
 
-  XrSystemProperties system_properties{XR_TYPE_SYSTEM_PROPERTIES};
-  if (XR_SUCCEEDED(
-          xrGetSystemProperties(instance, system, &system_properties))) {
-    const std::string system_name(system_properties.systemName);
+  XrInstanceProperties instance_properties{XR_TYPE_INSTANCE_PROPERTIES};
+  if (XR_SUCCEEDED(xrGetInstanceProperties(instance, &instance_properties))) {
+    const std::string runtime_name(instance_properties.runtimeName);
     impl_->runtime_is_monado =
-        system_name.find("Monado") != std::string::npos ||
-        system_name.find("monado") != std::string::npos;
-    LOG(INFO) << "OpenXR Metal runtime system='" << system_name
+        runtime_name.find("Monado") != std::string::npos ||
+        runtime_name.find("monado") != std::string::npos;
+    LOG(INFO) << "OpenXR Metal runtime='" << runtime_name
               << "' monado_zero_copy=" << impl_->runtime_is_monado;
   } else {
     impl_->runtime_is_monado = false;
-    LOG(WARNING) << "Could not query OpenXR system name; using generic "
+    LOG(WARNING) << "Could not query OpenXR runtime name; using generic "
                     "Metal copy transport";
   }
 
