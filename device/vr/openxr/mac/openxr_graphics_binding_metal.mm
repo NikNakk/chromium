@@ -14,6 +14,7 @@
 #include <cmath>
 #include <map>
 #include <optional>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -55,6 +56,24 @@ constexpr MTLPixelFormat kSupportedFormats[] = {
 
 constexpr double kPi = 3.14159265358979323846;
 constexpr size_t kMaxMeshRenderVertices = 1000000;
+
+// Temporary transport diagnostics for the generic Metal runtime path. Keep the
+// readback deliberately sparse: it is only intended to distinguish a black or
+// opaque Chromium transfer surface from a black/stale runtime swapchain.
+constexpr NSUInteger kTransferDiagnosticGrid = 4;
+constexpr NSUInteger kTransferDiagnosticStride = 256;
+constexpr uint64_t kTransferDiagnosticInitialFrames = 16;
+constexpr uint64_t kTransferDiagnosticPeriod = 60;
+
+struct MetalTextureFingerprint {
+  uint32_t samples = 0;
+  uint32_t nonblack = 0;
+  uint32_t alpha_zero = 0;
+  uint32_t alpha_opaque = 0;
+  uint64_t rgb_sum = 0;
+  uint64_t alpha_sum = 0;
+  uint64_t hash = 1469598103934665603ULL;
+};
 
 struct MeshRenderVertex {
   float position_x;
@@ -287,8 +306,107 @@ id<MTLTexture> CreateIOSurfaceMetalTexture(id<MTLDevice> device,
                                     plane:0];
 }
 
+id<MTLBuffer> EncodeTextureFingerprintReadback(
+    id<MTLDevice> device,
+    id<MTLCommandBuffer> command_buffer,
+    id<MTLTexture> texture) {
+  if (device == nil || command_buffer == nil || texture == nil ||
+      texture.width == 0 || texture.height == 0 ||
+      (texture.pixelFormat != MTLPixelFormatBGRA8Unorm &&
+       texture.pixelFormat != MTLPixelFormatBGRA8Unorm_sRGB)) {
+    return nil;
+  }
 
+  constexpr NSUInteger kSampleCount =
+      kTransferDiagnosticGrid * kTransferDiagnosticGrid;
+  id<MTLBuffer> buffer =
+      [device newBufferWithLength:kSampleCount * kTransferDiagnosticStride
+                          options:MTLResourceStorageModeShared];
+  if (buffer == nil) {
+    return nil;
+  }
 
+  id<MTLBlitCommandEncoder> blit = [command_buffer blitCommandEncoder];
+  if (blit == nil) {
+    return nil;
+  }
+
+  NSUInteger sample = 0;
+  for (NSUInteger gy = 0; gy < kTransferDiagnosticGrid; ++gy) {
+    const NSUInteger y =
+        ((texture.height - 1) * gy) / (kTransferDiagnosticGrid - 1);
+    for (NSUInteger gx = 0; gx < kTransferDiagnosticGrid; ++gx) {
+      const NSUInteger x =
+          ((texture.width - 1) * gx) / (kTransferDiagnosticGrid - 1);
+      [blit copyFromTexture:texture
+                sourceSlice:0
+                sourceLevel:0
+               sourceOrigin:MTLOriginMake(x, y, 0)
+                 sourceSize:MTLSizeMake(1, 1, 1)
+                   toBuffer:buffer
+          destinationOffset:sample * kTransferDiagnosticStride
+     destinationBytesPerRow:kTransferDiagnosticStride
+   destinationBytesPerImage:kTransferDiagnosticStride];
+      ++sample;
+    }
+  }
+  [blit endEncoding];
+  return buffer;
+}
+
+std::optional<MetalTextureFingerprint> ReadTextureFingerprint(
+    id<MTLBuffer> buffer) {
+  if (buffer == nil || buffer.contents == nullptr) {
+    return std::nullopt;
+  }
+
+  MetalTextureFingerprint result;
+  const auto* base = static_cast<const uint8_t*>(buffer.contents);
+  constexpr NSUInteger kSampleCount =
+      kTransferDiagnosticGrid * kTransferDiagnosticGrid;
+  for (NSUInteger i = 0; i < kSampleCount; ++i) {
+    const uint8_t* pixel = base + i * kTransferDiagnosticStride;
+    const uint8_t blue = pixel[0];
+    const uint8_t green = pixel[1];
+    const uint8_t red = pixel[2];
+    const uint8_t alpha = pixel[3];
+
+    ++result.samples;
+    result.nonblack += (red | green | blue) != 0;
+    result.alpha_zero += alpha == 0;
+    result.alpha_opaque += alpha == 255;
+    result.rgb_sum += static_cast<uint64_t>(red) + green + blue;
+    result.alpha_sum += alpha;
+
+    for (uint8_t component : {blue, green, red, alpha}) {
+      result.hash ^= component;
+      result.hash *= 1099511628211ULL;
+    }
+  }
+  return result;
+}
+
+void LogTextureFingerprint(const char* which,
+                           LayerId layer_id,
+                           uint64_t sequence,
+                           id<MTLBuffer> buffer) {
+  const auto fingerprint = ReadTextureFingerprint(buffer);
+  if (!fingerprint) {
+    LOG(INFO) << "XRTRANSFER " << which << " layer=" << layer_id
+              << " seq=" << sequence << " readback=unavailable";
+    return;
+  }
+
+  LOG(INFO) << "XRTRANSFER " << which << " layer=" << layer_id
+            << " seq=" << sequence
+            << " samples=" << fingerprint->samples
+            << " nonblack=" << fingerprint->nonblack
+            << " rgb_sum=" << fingerprint->rgb_sum
+            << " alpha_zero=" << fingerprint->alpha_zero
+            << " alpha_opaque=" << fingerprint->alpha_opaque
+            << " alpha_sum=" << fingerprint->alpha_sum
+            << " hash=" << fingerprint->hash;
+}
 
 }  // namespace
 
@@ -351,13 +469,15 @@ class OpenXrGraphicsBindingMetal::Impl {
   id<MTLCommandQueue> __strong command_queue = nil;
   XrGraphicsBindingMetalKHR binding{XR_TYPE_GRAPHICS_BINDING_METAL_KHR};
 
-  // Runtimes may expose an IOSurface-backed swapchain texture directly. If
-  // they do not, Blink renders into one of these Chromium-owned IOSurfaces and
-  // Chromium-owned IOSurface textures and RenderLayer() blits it into the
+  // Monado exposes IOSurface-backed swapchain textures with a synchronization
+  // contract that we control, so it can stay zero-copy. Other runtimes use a
+  // Chromium-owned IOSurface and an explicit render-pass transfer into the
   // runtime-owned OpenXR texture before release/submission.
   // Objective-C object pointers stored in C++ containers are strong under ARC;
   // libc++ invokes the ARC copy/destroy semantics as map entries move and die.
   std::map<void*, id<MTLTexture>> fallback_textures;
+  std::map<LayerId, uint64_t> transfer_diagnostic_frames;
+  bool runtime_is_monado = false;
 
   id<MTLRenderPipelineState> ScalePipeline(MTLPixelFormat pixel_format) {
     auto existing = scale_pipelines.find(static_cast<uint64_t>(pixel_format));
@@ -702,6 +822,21 @@ bool OpenXrGraphicsBindingMetal::Initialize(XrInstance instance,
     return false;
   }
 
+  XrSystemProperties system_properties{XR_TYPE_SYSTEM_PROPERTIES};
+  if (XR_SUCCEEDED(
+          xrGetSystemProperties(instance, system, &system_properties))) {
+    const std::string system_name(system_properties.systemName);
+    impl_->runtime_is_monado =
+        system_name.find("Monado") != std::string::npos ||
+        system_name.find("monado") != std::string::npos;
+    LOG(INFO) << "OpenXR Metal runtime system='" << system_name
+              << "' monado_zero_copy=" << impl_->runtime_is_monado;
+  } else {
+    impl_->runtime_is_monado = false;
+    LOG(WARNING) << "Could not query OpenXR system name; using generic "
+                    "Metal copy transport";
+  }
+
   impl_->device = (__bridge id<MTLDevice>)requirements.metalDevice;
   impl_->command_queue = [impl_->device newCommandQueue];
   if (impl_->command_queue == nil) {
@@ -932,43 +1067,25 @@ bool OpenXrGraphicsBindingMetal::RenderLayer(
     DVLOG(1) << __func__ << ": EAC reprojection "
              << source_texture.width << "x" << source_texture.height << " -> "
              << runtime_texture.width << "x" << runtime_texture.height;
-  } else if (source_texture.width == runtime_texture.width &&
-             source_texture.height == runtime_texture.height) {
-    if (layer.read_only_data().needs_raster_access) {
-      TRACE_EVENT_INSTANT("xr", "OpenXrMetalMediaBlit");
-    }
-    id<MTLBlitCommandEncoder> blit = [command_buffer blitCommandEncoder];
-    if (!blit) {
-      DLOG(ERROR) << __func__ << ": failed to create Metal blit command";
-      return false;
-    }
-
-    [blit copyFromTexture:source_texture
-              sourceSlice:0
-              sourceLevel:0
-             sourceOrigin:MTLOriginMake(0, 0, 0)
-               sourceSize:MTLSizeMake(source_texture.width,
-                                      source_texture.height, 1)
-                toTexture:runtime_texture
-         destinationSlice:0
-         destinationLevel:0
-        destinationOrigin:MTLOriginMake(0, 0, 0)];
-    [blit endEncoding];
   } else {
-    if (layer.read_only_data().needs_raster_access) {
-      TRACE_EVENT_INSTANT("xr", "OpenXrMetalMediaScale");
-    }
+    // Diagnostic A/B path for generic runtimes: always write the runtime
+    // swapchain through a render pass, even when source and destination sizes
+    // match. Meta XR Simulator implements Metal over a Vulkan compositor; this
+    // avoids relying on its handling of a blit-written OpenXR swapchain image.
+    TRACE_EVENT_INSTANT("xr", "OpenXrMetalRenderTransfer");
     id<MTLRenderPipelineState> pipeline =
         impl_->ScalePipeline(runtime_texture.pixelFormat);
     id<MTLSamplerState> sampler = impl_->ScaleSampler();
     if (!pipeline || !sampler ||
         !(runtime_texture.usage & MTLTextureUsageRenderTarget)) {
       DLOG(ERROR) << __func__
-                  << ": runtime texture cannot accept scaled Metal fallback";
+                  << ": runtime texture cannot accept render-pass Metal "
+                     "fallback";
       return false;
     }
 
-    MTLRenderPassDescriptor* pass = [MTLRenderPassDescriptor renderPassDescriptor];
+    MTLRenderPassDescriptor* pass =
+        [MTLRenderPassDescriptor renderPassDescriptor];
     pass.colorAttachments[0].texture = runtime_texture;
     pass.colorAttachments[0].loadAction = MTLLoadActionDontCare;
     pass.colorAttachments[0].storeAction = MTLStoreActionStore;
@@ -976,20 +1093,40 @@ bool OpenXrGraphicsBindingMetal::RenderLayer(
     id<MTLRenderCommandEncoder> encoder =
         [command_buffer renderCommandEncoderWithDescriptor:pass];
     if (!encoder) {
-      DLOG(ERROR) << __func__ << ": failed to create Metal scale encoder";
+      DLOG(ERROR) << __func__
+                  << ": failed to create Metal transfer render encoder";
       return false;
     }
 
     [encoder setRenderPipelineState:pipeline];
     [encoder setFragmentTexture:source_texture atIndex:0];
     [encoder setFragmentSamplerState:sampler atIndex:0];
-    [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
+    [encoder drawPrimitives:MTLPrimitiveTypeTriangle
+                vertexStart:0
+                vertexCount:3];
     [encoder endEncoding];
 
-    DVLOG(1) << __func__ << ": scaled WebXR transfer "
+    DVLOG(1) << __func__ << ": render-pass WebXR transfer "
              << source_texture.width << "x" << source_texture.height
              << " -> OpenXR swapchain " << runtime_texture.width << "x"
              << runtime_texture.height;
+  }
+
+  uint64_t& diagnostic_sequence =
+      impl_->transfer_diagnostic_frames[layer.GetLayerId()];
+  ++diagnostic_sequence;
+  const bool capture_fingerprint =
+      diagnostic_sequence <= kTransferDiagnosticInitialFrames ||
+      diagnostic_sequence % kTransferDiagnosticPeriod == 0;
+  id<MTLBuffer> source_fingerprint = nil;
+  id<MTLBuffer> runtime_fingerprint = nil;
+  if (capture_fingerprint) {
+    // Encode these after the transfer. They therefore cannot make an
+    // incomplete source become complete before the transfer under test.
+    source_fingerprint = EncodeTextureFingerprintReadback(
+        impl_->device, command_buffer, source_texture);
+    runtime_fingerprint = EncodeTextureFingerprintReadback(
+        impl_->device, command_buffer, runtime_texture);
   }
 
   [command_buffer commit];
@@ -999,8 +1136,29 @@ bool OpenXrGraphicsBindingMetal::RenderLayer(
   // the copy complete before xrReleaseSwapchainImage hands ownership back.
   [command_buffer waitUntilCompleted];
   if (command_buffer.status == MTLCommandBufferStatusError) {
-    DLOG(ERROR) << __func__ << ": Metal fallback blit failed";
+    DLOG(ERROR) << __func__ << ": Metal fallback transfer failed";
     return false;
+  }
+
+  if (capture_fingerprint) {
+    LOG(INFO) << "XRTRANSFER metadata layer=" << layer.GetLayerId()
+              << " seq=" << diagnostic_sequence
+              << " type=" << static_cast<int>(layer.type())
+              << " source=" << source_texture.width << "x"
+              << source_texture.height
+              << " runtime=" << runtime_texture.width << "x"
+              << runtime_texture.height
+              << " blend_source_alpha="
+              << layer.mutable_data().blend_texture_source_alpha
+              << " flip_y=" << layer.flip_y()
+              << " needs_raster_access="
+              << layer.read_only_data().needs_raster_access
+              << " runtime_iosurface="
+              << (runtime_texture.iosurface != nullptr);
+    LogTextureFingerprint("source", layer.GetLayerId(), diagnostic_sequence,
+                          source_fingerprint);
+    LogTextureFingerprint("runtime", layer.GetLayerId(), diagnostic_sequence,
+                          runtime_fingerprint);
   }
 
   return true;
@@ -1105,12 +1263,15 @@ void OpenXrGraphicsBindingMetal::CreateSharedImages(
              << " storageMode=" << static_cast<uint64_t>(texture.storageMode)
              << " usage=" << static_cast<uint64_t>(texture.usage);
 
-    // Zero-copy path for runtimes which return an IOSurface-backed Metal
-    // swapchain texture. Import the runtime's existing IOSurface into Chromium;
-    // do not allocate replacement storage. The renderer/GPU completion barrier
-    // is handled separately before xrReleaseSwapchainImage.
+    // Preserve Monado's zero-copy path, where the runtime and Chromium share
+    // the IOSurface under a synchronization contract we control. For Meta XR
+    // Simulator and other generic runtimes, deliberately use the copy fallback
+    // below even if the runtime texture happens to expose an IOSurface. An
+    // IOSurface alone does not describe the runtime's Metal/Vulkan interop
+    // synchronization.
     IOSurfaceRef runtime_surface = texture.iosurface;
-    if (runtime_surface && transfer_size == runtime_size &&
+    if (impl_->runtime_is_monado && runtime_surface &&
+        transfer_size == runtime_size &&
         !layer.read_only_data().needs_eac_reprojection &&
         layer.read_only_data().media_projection_data.empty()) {
       const size_t surface_width = IOSurfaceGetWidth(runtime_surface);
@@ -1124,10 +1285,11 @@ void OpenXrGraphicsBindingMetal::CreateSharedImages(
         if (swap_chain_info.shared_image) {
           impl_->fallback_textures.erase(metal_texture);
           swap_chain_info.sync_token = sii->GenVerifiedSyncToken();
-          DVLOG(1) << __func__ << ": transport=iosurface-zero-copy layer="
-                   << layer.GetLayerId()
-                   << " size=" << runtime_size.ToString()
-                   << " srgb=" << is_srgb;
+          LOG(INFO) << __func__
+                    << ": transport=monado-iosurface-zero-copy layer="
+                    << layer.GetLayerId()
+                    << " size=" << runtime_size.ToString()
+                    << " srgb=" << is_srgb;
           continue;
         }
         DLOG(WARNING) << __func__
@@ -1142,10 +1304,10 @@ void OpenXrGraphicsBindingMetal::CreateSharedImages(
     }
 
     // Runtime-neutral fallback. Render into a Chromium-owned IOSurface that can
-    // be shared with Blink/ANGLE, then copy it into the runtime swapchain
-    // texture in RenderLayer(). This costs one GPU blit per submitted layer but
-    // lets arbitrary macOS OpenXR runtimes work without understanding Monado's
-    // XPC transport.
+    // be shared with Blink/ANGLE, then render it into the runtime swapchain
+    // texture in RenderLayer(). This costs one GPU pass per submitted layer but
+    // avoids assuming that a generic runtime's IOSurface is safe to write
+    // directly from Chromium.
     gfx::ScopedIOSurface fallback_surface = gfx::CreateIOSurface(
         transfer_size, viz::SinglePlaneFormat::kBGRA_8888,
         /*should_clear=*/true);
@@ -1175,11 +1337,13 @@ void OpenXrGraphicsBindingMetal::CreateSharedImages(
 
     impl_->fallback_textures[metal_texture] = fallback_texture;
     swap_chain_info.sync_token = sii->GenVerifiedSyncToken();
-    DVLOG(1) << __func__
-              << ": transport=iosurface-copy layer=" << layer.GetLayerId()
+    LOG(INFO) << __func__
+              << ": transport=iosurface-render-copy layer="
+              << layer.GetLayerId()
               << " transfer=" << transfer_size.ToString()
               << " runtime=" << runtime_size.ToString()
               << " runtime_iosurface=" << (texture.iosurface != nullptr)
+              << " runtime_is_monado=" << impl_->runtime_is_monado
               << " srgb=" << is_srgb;
   }
 }
