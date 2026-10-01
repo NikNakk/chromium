@@ -263,6 +263,9 @@ constexpr auto kContentSettingsTypeGroupNames = std::to_array<
     {ContentSettingsType::LOCAL_NETWORK_ACCESS, nullptr},
     {ContentSettingsType::SUB_APPS_WITHOUT_PROMPTS, nullptr},
     {ContentSettingsType::SUSPICIOUS_SITE_WARNING_DATA, nullptr},
+    // Eye tracking (WebXR dynamic foveation) has no settings page yet; it is
+    // managed through the permission prompt and page info.
+    {ContentSettingsType::EYE_TRACKING, nullptr},
 });
 
 static_assert(
