@@ -16,4 +16,5 @@ const char kXrFoveationModeOff[] = "off";
 const char kXrFoveationModeFixed[] = "fixed";
 const char kXrFoveationModeDynamic[] = "dynamic";
 const char kXrFoveationLevel[] = "xr-foveation-level";
+const char kXrLegacyFoveationProfile[] = "xr-legacy-foveation-profile";
 }  // namespace device::switches

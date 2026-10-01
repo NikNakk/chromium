@@ -176,7 +176,7 @@ class OpenXrApiWrapper {
   XrResult CreateSession();
 
   XrResult CreateSwapchain();
-  XrResult CreateStandardFoveationProfile(OpenXrFoveationLevel level,
+  XrResult CreateStandardFoveationProfile(XrFoveationLevelFB level,
                                           bool eye_tracked);
   bool UpdateStandardFoveation();
   // Moves the runtime to an unfoveated state for the base swapchain, clearing

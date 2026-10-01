@@ -62,39 +62,68 @@ namespace {
 // polled.
 constexpr base::TimeDelta kTimeBetweenPollingEvents = base::Seconds(1);
 
-XrFoveationLevelFB GetStandardFoveationLevel(OpenXrFoveationLevel level) {
+// Foveation strength for one session. The standard path only has the three
+// registered XR_FB_foveation levels; the legacy path keeps its finer custom
+// profiles, defaulting to the one matching the standard level.
+struct FoveationStrength {
+  XrFoveationLevelFB standard = XR_FOVEATION_LEVEL_HIGH_FB;
+  OpenXrFoveationLevel legacy = OpenXrFoveationLevel::kAggressive;
+};
+
+OpenXrFoveationLevel LegacyProfileForStandardLevel(XrFoveationLevelFB level) {
   switch (level) {
-    case OpenXrFoveationLevel::kReference:
-      return XR_FOVEATION_LEVEL_LOW_FB;
-    case OpenXrFoveationLevel::kStrong:
-      return XR_FOVEATION_LEVEL_MEDIUM_FB;
-    case OpenXrFoveationLevel::kAggressive:
-    case OpenXrFoveationLevel::kAggressivePlus:
-    case OpenXrFoveationLevel::kNearExtreme:
-    case OpenXrFoveationLevel::kExtreme:
-      return XR_FOVEATION_LEVEL_HIGH_FB;
+    case XR_FOVEATION_LEVEL_LOW_FB:
+      return OpenXrFoveationLevel::kReference;
+    case XR_FOVEATION_LEVEL_MEDIUM_FB:
+      return OpenXrFoveationLevel::kStrong;
+    case XR_FOVEATION_LEVEL_HIGH_FB:
+      return OpenXrFoveationLevel::kAggressive;
+    default:
+      break;
   }
   NOTREACHED();
 }
 
-OpenXrFoveationLevel GetDiagnosticFoveationLevel() {
+// Browser-owned immersive media diagnostics; page WebXR always uses the
+// default strength.
+FoveationStrength GetDiagnosticFoveationStrength() {
   const base::CommandLine* command_line =
       base::CommandLine::ForCurrentProcess();
-  int level = static_cast<int>(OpenXrFoveationLevel::kAggressive);
-  if (!command_line->HasSwitch(switches::kXrFoveationLevel)) {
-    return static_cast<OpenXrFoveationLevel>(level);
-  }
+  FoveationStrength strength;
 
-  const std::string value =
-      command_line->GetSwitchValueASCII(switches::kXrFoveationLevel);
-  int parsed_level = level;
-  if (!base::StringToInt(value, &parsed_level) || parsed_level < 0 ||
-      parsed_level > static_cast<int>(OpenXrFoveationLevel::kExtreme)) {
-    LOG(WARNING) << "Ignoring invalid --" << switches::kXrFoveationLevel
-                 << "=" << value << "; expected 0-5";
-    return static_cast<OpenXrFoveationLevel>(level);
+  if (command_line->HasSwitch(switches::kXrFoveationLevel)) {
+    const std::string value =
+        command_line->GetSwitchValueASCII(switches::kXrFoveationLevel);
+    if (value == "low" || value == "0") {
+      strength.standard = XR_FOVEATION_LEVEL_LOW_FB;
+    } else if (value == "medium" || value == "1") {
+      strength.standard = XR_FOVEATION_LEVEL_MEDIUM_FB;
+    } else if (value == "high" || value == "2") {
+      strength.standard = XR_FOVEATION_LEVEL_HIGH_FB;
+    } else {
+      LOG(WARNING) << "Ignoring invalid --" << switches::kXrFoveationLevel
+                   << "=" << value
+                   << "; expected low, medium or high (0-2). Legacy custom "
+                      "profiles use --"
+                   << switches::kXrLegacyFoveationProfile;
+    }
   }
-  return static_cast<OpenXrFoveationLevel>(parsed_level);
+  strength.legacy = LegacyProfileForStandardLevel(strength.standard);
+
+  if (command_line->HasSwitch(switches::kXrLegacyFoveationProfile)) {
+    const std::string value =
+        command_line->GetSwitchValueASCII(switches::kXrLegacyFoveationProfile);
+    int profile = 0;
+    if (base::StringToInt(value, &profile) && profile >= 0 &&
+        profile <= static_cast<int>(OpenXrFoveationLevel::kExtreme)) {
+      strength.legacy = static_cast<OpenXrFoveationLevel>(profile);
+    } else {
+      LOG(WARNING) << "Ignoring invalid --"
+                   << switches::kXrLegacyFoveationProfile << "=" << value
+                   << "; expected 0-5";
+    }
+  }
+  return strength;
 }
 
 const char* GetXrSessionStateName(XrSessionState state) {
@@ -822,17 +851,18 @@ XrResult OpenXrApiWrapper::InitSession(
   bool swapchain_size_updated = RecomputeSwapchainSizeAndViewports();
   DCHECK(swapchain_size_updated);
 
-  const OpenXrFoveationLevel selected_foveation_level =
-      session_options_->is_ua_immersive_media
-          ? GetDiagnosticFoveationLevel()
-          : OpenXrFoveationLevel::kAggressive;
+  // Fixed and dynamic modes use the same strength, so they differ only in
+  // whether the centre follows gaze.
+  const FoveationStrength foveation_strength =
+      session_options_->is_ua_immersive_media ? GetDiagnosticFoveationStrength()
+                                              : FoveationStrength();
 
   // Create the FB profile before the swapchain: the swapchain is only created
   // foveation-capable once the standard path is known to be usable, so a
   // failure here leaves an ordinary swapchain for the legacy/unfoveated path.
   if (standard_foveation_enabled_) {
     const XrResult standard_result = CreateStandardFoveationProfile(
-        selected_foveation_level, standard_foveation_eye_tracked_);
+        foveation_strength.standard, standard_foveation_eye_tracked_);
     if (XR_FAILED(standard_result)) {
       DLOG(WARNING) << "Standard OpenXR foveation profile creation failed; "
                        "falling back to legacy path, result="
@@ -849,7 +879,7 @@ XrResult OpenXrApiWrapper::InitSession(
   // foveation but cannot use the standard path.
   if (allow_foveation && !standard_foveation_enabled_) {
     foveation_policy_ = extension_helper.GetFoveationPolicy(
-        instance_, system_, selected_foveation_level);
+        instance_, system_, foveation_strength.legacy);
   } else {
     foveation_policy_.reset();
   }
@@ -885,7 +915,8 @@ XrResult OpenXrApiWrapper::InitSession(
            << " legacy=" << foveation_policy_.has_value()
            << " legacy_eye_gaze=" << enable_eye_gaze
            << " fixed_legacy=" << foveation_fixed_center_
-           << " level=" << static_cast<int>(selected_foveation_level);
+           << " fb_level=" << foveation_strength.standard
+           << " legacy_profile=" << static_cast<int>(foveation_strength.legacy);
 
   // Make sure all of the objects we initialized are there.
   DCHECK(HasSession());
@@ -947,7 +978,7 @@ XrResult OpenXrApiWrapper::CreateSwapchain() {
 }
 
 XrResult OpenXrApiWrapper::CreateStandardFoveationProfile(
-    OpenXrFoveationLevel level,
+    XrFoveationLevelFB level,
     bool eye_tracked) {
   CHECK(extension_helper_);
   CHECK(HasSession());
@@ -960,7 +991,7 @@ XrResult OpenXrApiWrapper::CreateStandardFoveationProfile(
       XR_TYPE_FOVEATION_EYE_TRACKED_PROFILE_CREATE_INFO_META};
   XrFoveationLevelProfileCreateInfoFB level_info{
       XR_TYPE_FOVEATION_LEVEL_PROFILE_CREATE_INFO_FB};
-  level_info.level = GetStandardFoveationLevel(level);
+  level_info.level = level;
   level_info.verticalOffset = 0.0f;
   level_info.dynamic = XR_FOVEATION_DYNAMIC_DISABLED_FB;
   if (eye_tracked) {
