@@ -1980,15 +1980,24 @@ void OpenXrApiWrapper::UpdateFoveation() {
   }
 
   std::vector<gfx::PointF> target_centers;
+  std::vector<gfx::SizeF> view_extents;
   target_centers.reserve(primary_view_config_.Views().size());
+  view_extents.reserve(primary_view_config_.Views().size());
   const gfx::Size target_size =
       graphics_binding_->GetProjectionLayerSwapchainImageSize();
-  if (target_size.IsEmpty()) {
+  // Place each centre in the rectangle the frame actually submits, from the
+  // same code that fills subImage.imageRect.
+  const std::vector<XrRect2Di> image_rects =
+      graphics_binding_->GetBaseLayerSubmittedImageRects(primary_view_config_);
+  if (target_size.IsEmpty() ||
+      image_rects.size() != primary_view_config_.Views().size()) {
     disable_foveation();
     return;
   }
+  // WebGL content is stored bottom-up and submitted with a vertical flip.
+  const bool vertically_flipped =
+      graphics_binding_->IsBaseLayerStoredVerticallyFlipped();
 
-  float x_offset = static_cast<float>(primary_view_config_.Viewport().x());
   for (size_t i = 0; i < primary_view_config_.Views().size(); ++i) {
     const XrView& view = primary_view_config_.Views()[i];
     const float left = std::tan(view.fov.angleLeft);
@@ -2002,20 +2011,26 @@ void OpenXrApiWrapper::UpdateFoveation() {
 
     const float center_x =
         std::clamp((tangent_x - left) / (right - left), 0.0f, 1.0f);
-    const float center_y =
+    float center_y =
         std::clamp(1.0f - (tangent_y - down) / (up - down), 0.0f, 1.0f);
+    if (vertically_flipped) {
+      center_y = 1.0f - center_y;
+    }
 
-    const auto& properties = primary_view_config_.Properties()[i];
+    const XrRect2Di& rect = image_rects[i];
     target_centers.emplace_back(
-        (x_offset + center_x * properties.Width()) / target_size.width(),
-        (center_y * properties.Height()) / target_size.height());
-    x_offset += properties.Width();
+        (rect.offset.x + center_x * rect.extent.width) / target_size.width(),
+        (rect.offset.y + center_y * rect.extent.height) /
+            target_size.height());
+    view_extents.emplace_back(
+        static_cast<float>(rect.extent.width) / target_size.width(),
+        static_cast<float>(rect.extent.height) / target_size.height());
   }
 
   // Build the compositor-side mirror and publish the renderer-side rate map
   // metadata together. No gaze coordinates cross into the renderer process.
-  if (!graphics_binding_->ConfigureBaseLayerFoveation(*foveation_policy_,
-                                                       target_centers)) {
+  if (!graphics_binding_->ConfigureBaseLayerFoveation(
+          *foveation_policy_, target_centers, view_extents)) {
     disable_foveation();
   }
 }

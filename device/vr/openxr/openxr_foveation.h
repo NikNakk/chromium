@@ -18,6 +18,7 @@
 #include "third_party/openxr/src/include/openxr/openxr.h"
 #include "ui/gfx/geometry/point_f.h"
 #include "ui/gfx/geometry/size.h"
+#include "ui/gfx/geometry/size_f.h"
 
 // Experimental OpenXR wire contract shared with Monado. Keep this isolated
 // from Chromium's generic policy/backend interface below so a standardized
@@ -167,6 +168,9 @@ struct DEVICE_VR_EXPORT OpenXrFoveationMapping {
 struct DEVICE_VR_EXPORT OpenXrFoveationTargetConfig {
   gfx::Size logical_size;
   std::vector<gfx::PointF> centers;
+  // Each centre's view extent as a fraction of the target, so profile extents
+  // stay relative to that view in a packed target. Empty means full target.
+  std::vector<gfx::SizeF> view_extents;
   OpenXrFoveationPolicy policy;
 };
 
@@ -215,6 +219,24 @@ DEVICE_VR_EXPORT bool BuildOpenXrFoveationAxisRates(
     const OpenXrFoveationPolicy& policy,
     base::span<const float> normalized_centers,
     base::span<float> out_rates);
+
+// Packed-target variant: `center_view_extents[i]` is the extent of the view
+// containing `normalized_centers[i]` as a fraction of the target along this
+// axis. Distances are measured in that view's own normalized units, so a view
+// occupying half of a side-by-side target is not given twice the extent.
+DEVICE_VR_EXPORT bool BuildOpenXrFoveationAxisRates(
+    const OpenXrFoveationPolicy& policy,
+    base::span<const float> normalized_centers,
+    base::span<const float> center_view_extents,
+    base::span<float> out_rates);
+
+// Per-axis centres and view extents of a target config, for the packed
+// BuildOpenXrFoveationAxisRates() overload.
+DEVICE_VR_EXPORT bool GetOpenXrFoveationAxisInputs(
+    const OpenXrFoveationTargetConfig& config,
+    bool horizontal,
+    std::vector<float>& out_centers,
+    std::vector<float>& out_view_extents);
 
 DEVICE_VR_EXPORT XrCompositionLayerFoveationMapMNDX
 MakeOpenXrFoveationCompositionMap(const OpenXrFoveationMapping& mapping);

@@ -92,26 +92,66 @@ bool BuildOpenXrFoveationAxisRates(
     const OpenXrFoveationPolicy& policy,
     base::span<const float> normalized_centers,
     base::span<float> out_rates) {
-  if (out_rates.empty() || normalized_centers.empty()) {
+  const std::vector<float> full_target(normalized_centers.size(), 1.0f);
+  return BuildOpenXrFoveationAxisRates(policy, normalized_centers, full_target,
+                                       out_rates);
+}
+
+bool BuildOpenXrFoveationAxisRates(
+    const OpenXrFoveationPolicy& policy,
+    base::span<const float> normalized_centers,
+    base::span<const float> center_view_extents,
+    base::span<float> out_rates) {
+  if (out_rates.empty() || normalized_centers.empty() ||
+      center_view_extents.size() != normalized_centers.size()) {
     return false;
   }
 
   std::ranges::fill(out_rates, 0.0f);
   const uint32_t count = static_cast<uint32_t>(out_rates.size());
-  for (float center : normalized_centers) {
-    const float clamped = std::clamp(center, 0.0f, 1.0f);
+  for (size_t c = 0; c < normalized_centers.size(); ++c) {
+    const float view_extent = center_view_extents[c];
+    if (!(view_extent > 0.0f) || view_extent > 1.0f) {
+      return false;
+    }
+    const float clamped = std::clamp(normalized_centers[c], 0.0f, 1.0f);
     const uint32_t center_index =
         std::min(static_cast<uint32_t>(clamped * count), count - 1);
     for (uint32_t i = 0; i < count; ++i) {
       const uint32_t delta =
           i > center_index ? i - center_index : center_index - i;
+      const float target_offset =
+          static_cast<float>(delta) / static_cast<float>(count);
       out_rates[i] = std::max(
           out_rates[i],
-          OpenXrFoveationRateForOffset(
-              policy, static_cast<float>(delta) / static_cast<float>(count)));
+          OpenXrFoveationRateForOffset(policy, target_offset / view_extent));
     }
   }
   return true;
+}
+
+bool GetOpenXrFoveationAxisInputs(const OpenXrFoveationTargetConfig& config,
+                                  bool horizontal,
+                                  std::vector<float>& out_centers,
+                                  std::vector<float>& out_view_extents) {
+  if (!config.view_extents.empty() &&
+      config.view_extents.size() != config.centers.size()) {
+    return false;
+  }
+  out_centers.clear();
+  out_view_extents.clear();
+  for (size_t i = 0; i < config.centers.size(); ++i) {
+    out_centers.push_back(horizontal ? config.centers[i].x()
+                                     : config.centers[i].y());
+    if (config.view_extents.empty()) {
+      out_view_extents.push_back(1.0f);
+    } else {
+      out_view_extents.push_back(horizontal
+                                     ? config.view_extents[i].width()
+                                     : config.view_extents[i].height());
+    }
+  }
+  return !out_centers.empty();
 }
 
 XrCompositionLayerFoveationMapMNDX MakeOpenXrFoveationCompositionMap(

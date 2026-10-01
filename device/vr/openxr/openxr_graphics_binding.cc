@@ -66,7 +66,8 @@ OpenXrGraphicsBinding::CreateFoveationBackend() {
 
 bool OpenXrGraphicsBinding::ConfigureBaseLayerFoveation(
     const OpenXrFoveationPolicy& policy,
-    base::span<const gfx::PointF> target_centers) {
+    base::span<const gfx::PointF> target_centers,
+    base::span<const gfx::SizeF> view_extents) {
   if (!foveation_backend_ || target_centers.empty()) {
     ClearBaseLayerFoveation();
     return false;
@@ -76,6 +77,7 @@ bool OpenXrGraphicsBinding::ConfigureBaseLayerFoveation(
   config.logical_size = GetProjectionLayerSwapchainImageSize();
   config.policy = policy;
   config.centers.assign(target_centers.begin(), target_centers.end());
+  config.view_extents.assign(view_extents.begin(), view_extents.end());
 
   auto state = foveation_backend_->ConfigureTarget(0, config);
   if (!state || !state->mapping ||

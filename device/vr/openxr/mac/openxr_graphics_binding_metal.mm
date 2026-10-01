@@ -1285,21 +1285,23 @@ bool OpenXrGraphicsBindingMetal::PublishBaseLayerFoveation(
 
   std::vector<float> horizontal_centers;
   std::vector<float> vertical_centers;
-  horizontal_centers.reserve(config.centers.size());
-  vertical_centers.reserve(config.centers.size());
-  for (const gfx::PointF& center : config.centers) {
-    horizontal_centers.push_back(center.x());
-    vertical_centers.push_back(center.y());
+  std::vector<float> horizontal_extents;
+  std::vector<float> vertical_extents;
+  if (!GetOpenXrFoveationAxisInputs(config, /*horizontal=*/true,
+                                    horizontal_centers, horizontal_extents) ||
+      !GetOpenXrFoveationAxisInputs(config, /*horizontal=*/false,
+                                    vertical_centers, vertical_extents)) {
+    return false;
   }
 
-  // Same builder as OpenXrFoveationBackendMetal, so the published recipe is
-  // exactly the one behind the legacy compositor mapping.
+  // Same builder and inputs as OpenXrFoveationBackendMetal, so the published
+  // recipe is exactly the one behind the legacy compositor mapping.
   std::array<float, kFoveationMetadataZoneCount> horizontal_rates;
   std::array<float, kFoveationMetadataZoneCount> vertical_rates;
   if (!BuildOpenXrFoveationAxisRates(config.policy, horizontal_centers,
-                                      horizontal_rates) ||
+                                      horizontal_extents, horizontal_rates) ||
       !BuildOpenXrFoveationAxisRates(config.policy, vertical_centers,
-                                      vertical_rates)) {
+                                      vertical_extents, vertical_rates)) {
     return false;
   }
 

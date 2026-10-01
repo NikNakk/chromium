@@ -155,7 +155,8 @@ class OpenXrGraphicsBinding {
   // normalized to the full target, not to individual eye subimages.
   bool ConfigureBaseLayerFoveation(
       const OpenXrFoveationPolicy& policy,
-      base::span<const gfx::PointF> target_centers);
+      base::span<const gfx::PointF> target_centers,
+      base::span<const gfx::SizeF> view_extents);
   bool ConfigureBaseLayerResolvedFoveation(
       const OpenXrResolvedFoveationRateMap& state);
   void ClearBaseLayerFoveation();

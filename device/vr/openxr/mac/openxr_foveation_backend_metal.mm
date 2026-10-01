@@ -30,6 +30,7 @@ class OpenXrFoveationBackendMetal::Impl {
     OpenXrFoveationTargetState state;
     gfx::Size logical_size;
     OpenXrFoveationPolicy policy;
+    std::vector<gfx::SizeF> view_extents;
     std::vector<uint32_t> x_zones;
     std::vector<uint32_t> y_zones;
   };
@@ -71,15 +72,19 @@ OpenXrFoveationBackendMetal::ConfigureTarget(
 
   std::vector<float> center_x;
   std::vector<float> center_y;
+  std::vector<float> extent_x;
+  std::vector<float> extent_y;
+  if (!GetOpenXrFoveationAxisInputs(config, /*horizontal=*/true, center_x,
+                                    extent_x) ||
+      !GetOpenXrFoveationAxisInputs(config, /*horizontal=*/false, center_y,
+                                    extent_y)) {
+    return std::nullopt;
+  }
   std::vector<uint32_t> x_zones;
   std::vector<uint32_t> y_zones;
-  center_x.reserve(config.centers.size());
-  center_y.reserve(config.centers.size());
   x_zones.reserve(config.centers.size());
   y_zones.reserve(config.centers.size());
   for (const gfx::PointF& center : config.centers) {
-    center_x.push_back(center.x());
-    center_y.push_back(center.y());
     x_zones.push_back(ZoneForCoordinate(center.x()));
     y_zones.push_back(ZoneForCoordinate(center.y()));
   }
@@ -88,6 +93,7 @@ OpenXrFoveationBackendMetal::ConfigureTarget(
   if (existing != impl_->targets.end() &&
       existing->second.logical_size == config.logical_size &&
       SamePolicy(existing->second.policy, config.policy) &&
+      existing->second.view_extents == config.view_extents &&
       existing->second.x_zones == x_zones &&
       existing->second.y_zones == y_zones) {
     return existing->second.state;
@@ -95,8 +101,10 @@ OpenXrFoveationBackendMetal::ConfigureTarget(
 
   std::array<float, kZoneCount> horizontal;
   std::array<float, kZoneCount> vertical;
-  if (!BuildOpenXrFoveationAxisRates(config.policy, center_x, horizontal) ||
-      !BuildOpenXrFoveationAxisRates(config.policy, center_y, vertical)) {
+  if (!BuildOpenXrFoveationAxisRates(config.policy, center_x, extent_x,
+                                     horizontal) ||
+      !BuildOpenXrFoveationAxisRates(config.policy, center_y, extent_y,
+                                     vertical)) {
     return std::nullopt;
   }
 
@@ -148,6 +156,7 @@ OpenXrFoveationBackendMetal::ConfigureTarget(
   entry.state = state;
   entry.logical_size = config.logical_size;
   entry.policy = config.policy;
+  entry.view_extents = config.view_extents;
   entry.x_zones = std::move(x_zones);
   entry.y_zones = std::move(y_zones);
   impl_->targets[target_index] = std::move(entry);

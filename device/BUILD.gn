@@ -435,6 +435,7 @@ test("device_unittests") {
 
     if (enable_openxr) {
       sources += [
+        "vr/openxr/openxr_foveation_unittest.cc",
         "vr/openxr/openxr_hand_utils_unittest.cc",
         "vr/openxr/openxr_view_configuration_unittest.cc",
       ]
