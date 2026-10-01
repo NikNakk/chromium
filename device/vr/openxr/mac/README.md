@@ -148,136 +148,152 @@ conservative Metal-command-buffer completion wait after the copy before the
 runtime texture is released; that is separate from renderer-to-IOSurface
 synchronization.
 
-## Gaze-driven foveation
+## Foveated rendering
 
-Chromium now consumes the experimental graphics-independent
-`XR_MNDX_foveation` policy exposed by the runtime. Policy selection, eye-gaze
-projection, and logical-to-physical mapping live above the graphics backend;
-Metal is only the first implementation.
+Chromium supports two foveation paths. Both keep raw gaze out of Blink, Mojo,
+ANGLE and IOSurface metadata; the GPU process only ever receives a resolved
+Metal rate-map recipe.
 
-The current path is:
+### Standard runtime-owned path (preferred)
+
+Used when the runtime exposes `XR_FB_swapchain_update_state`,
+`XR_FB_foveation`, `XR_FB_foveation_configuration`, and
+`XR_MNDX_foveation_metal` spec version 3 or later (plus
+`XR_META_foveation_eye_tracked` for dynamic foveation):
 
 ```text
-XR_EXT_eye_gaze_interaction
+XR_FB_foveation profile (level LOW/MEDIUM/HIGH)
+  + XR_META_foveation_eye_tracked   (dynamic only; gaze stays in the runtime)
         |
         v
-runtime XR_MNDX_foveation policy
+xrUpdateSwapchainFB on the packed base swapchain
         |
         v
-per-eye gaze projected into each XrView FOV
+xrGetFoveationMetalStateMNDX + XrFoveationMetalPackedStateMNDX
+  views = exactly the submitted subImage.imageRects
+  XrFoveationMetalImageLayoutMNDX.verticalFlip = true (WebGL is bottom-up)
         |
         v
-packed-target normalized focal centres
+resolved recipe: 16+16 rates, logical and physical size
         |
-        +--> compositor-side 129-point logical -> physical mapping
+        +--> runtime binds the map to the image when it is released
         |
-        +--> IOSurface metadata:
-             org.chromium.openxr.metal-foveation-v1
+        +--> IOSurface metadata org.chromium.openxr.metal-foveation-v1
+             (version 2: sizes, rates, serial - graphics state only)
                      |
                      v
-                  ANGLE Metal
-                     |
-                     v
-           MTLRasterizationRateMap
-                     |
-                     v
-             WebGL scene rendering
+                ANGLE Metal: MTLRasterizationRateMap
 ```
 
-The default browser policy is currently the validated **Aggressive** runtime
-profile (1.0 centre / 0.5 middle / 0.25 periphery on the current Monado
-implementation). If gaze is unavailable, Chromium removes both the renderer
-metadata and compositor mapping rather than reusing an old gaze position.
+No `XR_EXT_eye_gaze_interaction` action is created on this path.
 
-For browser-owned immersive-video diagnostics, the same build can now be
-launched in three modes:
+The packed view rectangles come from the same `GetProjectionViews()` code that
+fills `XrCompositionLayerProjectionView::subImage.imageRect`, so the map always
+describes the packed target that is submitted, including unequal views and
+non-zero offsets. Active secondary views are not foveated (the frame is
+rendered unfoveated instead).
+
+### Legacy Chromium-owned path (fallback)
+
+Used only when the standard path is unavailable or its setup fails: the
+runtime's `XR_MNDX_foveation` policy, a Chromium-owned
+`XR_EXT_eye_gaze_interaction` action (dynamic only), Chromium's own packed
+Metal map and an `XrCompositionLayerFoveationMapMNDX` with each projection view.
+It uses the same submitted rectangles, the same vertical flip and view-local
+profile extents (a view occupying half of the packed target is not given
+twice the intended extent). The gaze action is created only when this path can
+actually drive dynamic foveation.
+
+The FB profile is created before the base swapchain, so a profile failure
+leaves an ordinary swapchain for the legacy/unfoveated path.
+
+### Per-image correctness
+
+The runtime pairs each released image with the map selected when it was
+released, and ANGLE renders each image with the recipe on its IOSurface.
+Chromium keeps these three in agreement:
+
+- sparse frames: when the runtime hands back the image that was released last
+  (and may be re-released unrendered), Chromium neither queries a new map nor
+  rewrites that image's metadata;
+- a frame that is not foveated applies a `XR_FOVEATION_LEVEL_NONE_FB` profile,
+  clearing the runtime's selection, and removes the metadata;
+- blurred/hidden frames are rendered and composited unfoveated;
+- before releasing a rendered image, Chromium checks that ANGLE acknowledged
+  the published metadata serial (`org.chromium.openxr.metal-foveation-applied`).
+  If not, the frame is composited unfoveated and foveation stays off for the
+  session;
+- the XR process rebuilds the runtime's map on its own Metal device and
+  refuses a recipe whose physical size differs; ANGLE does the same against
+  the physical size in the metadata and removes metadata it refuses.
+
+The compositor therefore never samples full-resolution pixels as a compacted
+image, or a compacted image with a different map.
+
+### Privilege boundary
+
+Only SharedImages created by the XR process for the base projection layer of a
+foveation-enabled session are labelled `OpenXrMetal*Foveated`; the GPU process
+turns that into the ANGLE texture label `ChromiumOpenXrFoveated`, and ANGLE
+reads IOSurface metadata only for textures carrying it (resolving ANGLE's
+mip/slice views to their storage texture). Ordinary WebGL, canvas, video and
+compositor surfaces never consult the metadata, and a stale metadata key alone
+cannot enable foveation.
+
+Page WebXR must request `"dynamic-foveation"` (optional or required) and be
+granted the Eye Tracking permission. A denied optional feature continues
+unfoveated; a denied or unavailable required feature rejects the session. The
+permission never grants page-visible gaze.
+
+### Browser-owned immersive-media diagnostics
+
+These switches apply only to UA-owned immersive media, never to page WebXR:
 
 ```sh
 --xr-foveation-mode=off
---xr-foveation-mode=fixed --xr-foveation-level=2
---xr-foveation-mode=dynamic --xr-foveation-level=2
+--xr-foveation-mode=fixed   --xr-foveation-level=high
+--xr-foveation-mode=dynamic --xr-foveation-level=high
 ```
 
-`--xr-foveation-level` accepts 0-5 and maps to Reference, Strong,
-Aggressive, AggressivePlus, NearExtreme, and Extreme respectively. If omitted,
-the level remains 2 (Aggressive). These switches apply only to UA-owned
-immersive media; page-created WebXR still requires the explicit
-`"dynamic-foveation"` session feature and its eye-tracking permission.
+- `off`: no FB profile, no META eye tracking, no gaze action, no metadata;
+- `fixed`: standard FB foveation with the centre on each view's optical axis;
+  no eye tracking;
+- `dynamic`: FB + META runtime-owned eye tracking (legacy fallback: Chromium
+  gaze action).
 
-`fixed` projects the optical axis into each eye's actual OpenXR FOV, so an
-asymmetric view does not incorrectly assume that the foveal point is texture
-centre. It does not create or synchronize the eye-gaze action.
+`--xr-foveation-level` takes the standard `XR_FB_foveation` levels `low`,
+`medium` or `high` (default `high`; `0`, `1`, `2` are accepted as aliases).
+Fixed and dynamic use the same level, so they differ only in whether the
+centre follows gaze. The historical six custom profiles are legacy-only:
+`--xr-legacy-foveation-profile=0..5` (reference, strong, aggressive,
+aggressive-plus, near-extreme, extreme) overrides the level when the legacy
+path is in use and is ignored by the standard path.
 
-The Metal backend quantizes the packed target to a 16x16 rate grid and caches
-rate maps across frames. The matching dense 129-sample mapping is submitted
-with the projection pixels that were actually rendered, including sparse-frame
-reuse, so Monado's fused distortion/timewarp path samples the compact raster
-correctly.
+Note that with WebXR layers active the base projection layer is not rendered,
+so base-layer foveation does not apply to content drawn into layers.
 
 ### ANGLE bridge
 
 ANGLE is a separate DEPS checkout rather than part of Chromium's Git
 repository. This fork therefore carries
-`openxr/mac/apply_angle_metal_foveation.py`, which is run automatically by GN
-for macOS OpenXR builds. It is pinned to the ANGLE revision in this Chromium
-branch and modifies only ANGLE's Metal render-pass wrapper:
+`openxr/mac/apply_angle_metal_foveation.py`, run by a gclient hook and
+pinned to the ANGLE revision in this branch. It:
 
-- read the XR foveation dictionary from an IOSurface colour/resolve target;
-- validate the logical size and per-axis rate arrays;
-- create/cache an `MTLRasterizationRateMap` on the target `MTLDevice`;
-- set `MTLRenderPassDescriptor.rasterizationRateMap` before ANGLE creates the
-  native render encoder;
-- do nothing for every surface without the XR metadata.
+- propagates GL texture labels to the native Metal texture (both
+  `bindTexImage()` and `setEGLImageTarget()`);
+- reads version-2 XR foveation metadata from a labelled colour/resolve target;
+- rebuilds and caches the `MTLRasterizationRateMap`, refusing it unless its
+  physical size matches the runtime's;
+- sets `MTLRenderPassDescriptor.rasterizationRateMap` and records the applied
+  metadata serial;
+- does nothing for every other surface.
 
-This keeps the Chromium renderer/GLES command stream unchanged. A future ANGLE
-roll intentionally fails GN generation until this tiny bridge is rebased,
-rather than silently applying it to different source.
+A checkout carrying an older bridge variant is rebuilt from pristine ANGLE
+sources. A future ANGLE roll makes `--check` fail until the bridge is rebased.
 
-There is related work in **WebKit's ANGLE fork**:
-`GL_ANGLE_variable_rasterization_rate_metal` and
-`glBindMetalRasterizationRateMapANGLE()` expose a general Metal VRS binding
-and include the corresponding Metal render-pass handling. That work is not
-present in current upstream ANGLE/Chromium. Our IOSurface metadata bridge is
-therefore not duplicating a Chromium upstream implementation, but it does use
-the same underlying ANGLE/Metal capability as WebKit's private extension. If
-that extension (or an equivalent) lands upstream, the metadata consumer should
-be replaced with the upstream API rather than maintained in parallel.
-
-For PSVR2 testing, Monado must also expose eye gaze, for example by ensuring
-`PSVR2_GAZE_STREAMS=1` reaches `monado-service`.
-
-### Migration to standard OpenXR foveation control
-
-The current Chromium path predates Monado's standards-oriented foveation
-implementation. Monado now supports the standard control plane built from
-`XR_FB_swapchain_update_state`, `XR_FB_foveation`,
-`XR_FB_foveation_configuration`, and
-`XR_META_foveation_eye_tracked`. In that model, eye tracking can remain
-runtime-private; applications do not need to create an
-`XR_EXT_eye_gaze_interaction` action merely to obtain gaze-driven foveation.
-
-Chromium should prefer that control plane once its packed-stereo renderer can
-consume the runtime-owned Metal state. The remaining Metal transport is
-necessarily graphics-API-specific; the current Monado prototype exposes
-`XR_MNDX_foveation_metal` to return the runtime-owned
-`MTLRasterizationRateMap` and its revision.
-
-There is currently one important mismatch: Chromium's base WebXR projection
-swapchain is a single side-by-side stereo texture, while Monado's Metal bridge
-returns a foveation map for one OpenXR view at a time. Chromium's existing
-Metal backend intentionally builds one packed-target map containing both
-foveal centres. Therefore the old Chromium path remains the compatibility path
-until one of these is implemented:
-
-1. a runtime Metal query that can return one combined multi-view/packed-target
-   map;
-2. per-eye/array rendering in Chromium so the runtime's per-view maps can be
-   consumed directly; or
-3. a temporary hybrid where FB/META owns policy and gaze while Chromium still
-   builds the packed Metal map.
-
-Do not remove the MNDX policy compatibility path until the packed-stereo case
-has an equivalent standard-control implementation.
+WebKit's ANGLE fork has `GL_ANGLE_variable_rasterization_rate_metal`; if that
+or an equivalent lands upstream, the metadata consumer should be replaced with
+it.
 
 ## GPU completion and swapchain release
 
@@ -535,9 +551,10 @@ Implemented on this branch:
   `raw `/`dfl8`, packed stereo, two-mesh custom stereo, and legacy `ytmp`;
 - YouTube EAC analytic reprojection as a metadata-missing compatibility fallback;
 - clean normal session exit/re-entry;
-- graphics-API-independent gaze-foveation policy and projection-map transport;
+- standard runtime-owned FB/META foveation with the Metal companion, plus the
+  legacy Chromium-owned fallback;
 - Metal/ANGLE variable-rasterization-rate rendering for IOSurface-backed WebGL
-  XR targets.
+  XR targets, verified per image before release.
 
 Not yet implemented or intentionally out of scope:
 
@@ -578,9 +595,10 @@ Chromium GPU process.
    does not enter `RenderLayer()`'s copy branch;
 9. confirm the GPU process does not load
    `libmonado_metal_xpc_client.dylib` and has no Monado sandbox violation;
-10. with eye gaze enabled, confirm ANGLE logs
-    `Chromium XR foveation logical=... physical=... zones=16` when a rate map
-    is first built or changes, then compare GPU duration with foveation disabled;
+10. with foveation enabled, confirm no "XR foveation was not applied by the
+    renderer" error in the browser log and no ANGLE "rejecting IOSurface
+    rate-map metadata" message, then compare GPU duration across
+    `--xr-foveation-mode=off|fixed|dynamic`;
 11. stress a heavy WebXR scene and inspect the three completion/release trace
     events above for each frame;
 12. exit while a frame is in flight, then repeatedly enter/exit immersive mode;
