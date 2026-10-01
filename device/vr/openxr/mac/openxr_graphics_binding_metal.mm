@@ -8,7 +8,6 @@
 
 #include "device/vr/openxr/mac/openxr_graphics_binding_metal.h"
 
-#include "device/vr/openxr/mac/openxr_foveation_backend_metal.h"
 
 #include <algorithm>
 #include <array>
@@ -809,15 +808,6 @@ bool OpenXrGraphicsBindingMetal::SupportsLayers() const {
   return true;
 }
 
-std::unique_ptr<OpenXrFoveationBackend>
-OpenXrGraphicsBindingMetal::CreateFoveationBackend() {
-  if (impl_->device == nil) {
-    return nullptr;
-  }
-  return std::make_unique<OpenXrFoveationBackendMetal>(
-      (__bridge void*)impl_->device);
-}
-
 void OpenXrGraphicsBindingMetal::ResizeSharedBuffer(
     OpenXrCompositionLayer& layer,
     OpenXrSwapchainInfo& swap_chain_info,
@@ -1060,7 +1050,7 @@ void OpenXrGraphicsBindingMetal::CreateSharedImages(
                             gfx::ColorSpace::MatrixID::RGB,
                             gfx::ColorSpace::RangeID::FULL);
   const bool foveation_capable_base_layer =
-      SupportsDynamicFoveation() && layer.GetLayerId() == kInvalidLayerId;
+      IsBaseLayerFoveationAllowed() && layer.GetLayerId() == kInvalidLayerId;
   const gpu::SharedImageInfo direct_si_info{
       viz::SinglePlaneFormat::kBGRA_8888, runtime_size, color_space, usage,
       foveation_capable_base_layer ? "OpenXrMetalDirectFoveated"
@@ -1273,40 +1263,6 @@ bool OpenXrGraphicsBindingMetal::PublishFoveationMetadata(
            << logical_size.ToString() << " physical="
            << physical_size.ToString() << " serial=" << serial;
   return true;
-}
-
-bool OpenXrGraphicsBindingMetal::PublishBaseLayerFoveation(
-    const OpenXrFoveationTargetConfig& config,
-    const gfx::Size& physical_size) {
-  if (!base_layer_ || config.logical_size.IsEmpty() ||
-      config.centers.empty()) {
-    return false;
-  }
-
-  std::vector<float> horizontal_centers;
-  std::vector<float> vertical_centers;
-  std::vector<float> horizontal_extents;
-  std::vector<float> vertical_extents;
-  if (!GetOpenXrFoveationAxisInputs(config, /*horizontal=*/true,
-                                    horizontal_centers, horizontal_extents) ||
-      !GetOpenXrFoveationAxisInputs(config, /*horizontal=*/false,
-                                    vertical_centers, vertical_extents)) {
-    return false;
-  }
-
-  // Same builder and inputs as OpenXrFoveationBackendMetal, so the published
-  // recipe is exactly the one behind the legacy compositor mapping.
-  std::array<float, kFoveationMetadataZoneCount> horizontal_rates;
-  std::array<float, kFoveationMetadataZoneCount> vertical_rates;
-  if (!BuildOpenXrFoveationAxisRates(config.policy, horizontal_centers,
-                                      horizontal_extents, horizontal_rates) ||
-      !BuildOpenXrFoveationAxisRates(config.policy, vertical_centers,
-                                      vertical_extents, vertical_rates)) {
-    return false;
-  }
-
-  return PublishFoveationMetadata(config.logical_size, physical_size,
-                                  horizontal_rates, vertical_rates);
 }
 
 bool OpenXrGraphicsBindingMetal::PublishBaseLayerResolvedFoveation(

@@ -36,7 +36,6 @@ class ContextProvider;
 namespace device {
 class OpenXrCompositionLayer;
 class OpenXrExtensionEnumeration;
-class OpenXrFoveationBackend;
 class OpenXrViewConfiguration;
 
 // This class exists to provide an abstraction for the different rendering
@@ -56,12 +55,16 @@ class OpenXrGraphicsBinding {
   // Ensures that the GraphicsBinding is ready for use.
   virtual bool Initialize(XrInstance instance, XrSystemId system) = 0;
 
-  // Called after the XrSession has been created. Dynamic eye-tracked
-  // foveation is privileged UA behaviour and must never be enabled merely
-  // because a page created an immersive WebXR session.
+  // Called after the XrSession has been created. Foveation is only allowed
+  // for browser-owned immersive media or a page that was granted the
+  // dynamic-foveation feature; it must never be enabled merely because a page
+  // created an immersive WebXR session.
   void OnSessionCreated(XrSpace local_space,
                         bool is_webgpu,
-                        bool allow_dynamic_foveation);
+                        bool allow_foveation);
+
+  // Withdraws foveation for the session, before swapchains are created.
+  void DisallowBaseLayerFoveation() { foveation_allowed_ = false; }
 
   // Called when the XrSession is going to destroyed.
   void OnSessionDestroyed(gpu::SharedImageInterface* sii);
@@ -147,16 +150,8 @@ class OpenXrGraphicsBinding {
   // Return if the graphics binding supports multiple XR layers.
   virtual bool SupportsLayers() const = 0;
 
-  // Creates a graphics-API-specific foveation implementation behind the
-  // generic Chromium-facing policy interface.
-  virtual std::unique_ptr<OpenXrFoveationBackend> CreateFoveationBackend();
-
-  // Configure the packed base projection render target. The centres are
-  // normalized to the full target, not to individual eye subimages.
-  bool ConfigureBaseLayerFoveation(
-      const OpenXrFoveationPolicy& policy,
-      base::span<const gfx::PointF> target_centers,
-      base::span<const gfx::SizeF> view_extents);
+  // Publish the runtime's resolved Metal rate-map recipe for the acquired
+  // base projection image, or remove it.
   bool ConfigureBaseLayerResolvedFoveation(
       const OpenXrResolvedFoveationRateMap& state);
   void ClearBaseLayerFoveation();
@@ -174,11 +169,6 @@ class OpenXrGraphicsBinding {
     kNotApplied,
   };
   virtual FoveationRenderStatus GetBaseLayerFoveationRenderStatus();
-
-  // True when a legacy compositor mapping is attached to the current frame.
-  bool HasBaseLayerFoveationMapping() const {
-    return current_base_foveation_mapping_.has_value();
-  }
 
   bool IsBaseLayerRendered() const;
 
@@ -201,11 +191,10 @@ class OpenXrGraphicsBinding {
   // OpenXR. Does not affect the API used for compositing.
   bool IsWebGPUSession() const { return webgpu_session_; }
 
-  // True when this session is allowed to use dynamic foveation and the active
-  // graphics backend actually has an implementation for it.
-  bool SupportsDynamicFoveation() const {
-    return dynamic_foveation_allowed_ && foveation_backend_ != nullptr;
-  }
+  // True when the base projection layer of this session may be foveated. Its
+  // render targets are the only ones marked as privileged XR foveation
+  // targets for the GPU process.
+  bool IsBaseLayerFoveationAllowed() const { return foveation_allowed_; }
 
   // If the layer should be flipped, return a pointer to the
   // XrCompositionLayerImageLayoutFB. Otherwise, return null. The return value
@@ -379,9 +368,6 @@ class OpenXrGraphicsBinding {
   // Publish/remove backend transport metadata for the currently acquired base
   // projection image. Generic policy stays above this boundary; platform
   // bindings choose how the renderer process receives it.
-  virtual bool PublishBaseLayerFoveation(
-      const OpenXrFoveationTargetConfig& config,
-      const gfx::Size& physical_size);
   virtual bool PublishBaseLayerResolvedFoveation(
       const OpenXrResolvedFoveationRateMap& state);
   virtual void ClearPublishedBaseLayerFoveation();
@@ -423,19 +409,10 @@ class OpenXrGraphicsBinding {
   std::vector<LayerId> layers_sequence_;
   bool has_custom_projection_layer_ = false;
   bool webgpu_session_ = false;
-  bool dynamic_foveation_allowed_ = false;
+  bool foveation_allowed_ = false;
   bool fb_composition_layer_ext_enabled_ = false;
   bool webxr_visible_ = true;
   bool overlay_visible_ = false;
-
-  std::unique_ptr<OpenXrFoveationBackend> foveation_backend_;
-  std::optional<OpenXrFoveationMapping> current_base_foveation_mapping_;
-  mutable std::map<XrViewConfigurationType, OpenXrFoveationMapping>
-      last_rendered_base_foveation_mappings_;
-  mutable std::map<
-      XrViewConfigurationType,
-      std::vector<XrCompositionLayerFoveationMapMNDX>>
-      submitted_base_foveation_maps_;
 
   // This will only be valid if `fb_composition_layer_ext_enabled_` is true.
   XrCompositionLayerImageLayoutFB y_flip_layer_layout_;

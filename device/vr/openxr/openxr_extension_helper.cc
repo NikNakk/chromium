@@ -138,7 +138,6 @@ OpenXrExtensionHelper::OpenXrExtensionHelper(
 
   // General methods
   OPENXR_LOAD_FN(xrPollFutureEXT);
-  OPENXR_LOAD_FN(xrGetFoveationProfileMNDX);
   OPENXR_LOAD_FN(xrCreateFoveationProfileFB);
   OPENXR_LOAD_FN(xrDestroyFoveationProfileFB);
   OPENXR_LOAD_FN(xrUpdateSwapchainFB);
@@ -250,10 +249,7 @@ bool OpenXrExtensionHelper::IsFeatureSupported(
                                    return IsExtensionSupported(extension);
                                  });
     case device::mojom::XRSessionFeature::DYNAMIC_FOVEATION:
-      return SupportsStandardEyeTrackedFoveation() ||
-             (IsExtensionSupported(
-                  XR_EXT_EYE_GAZE_INTERACTION_EXTENSION_NAME) &&
-              IsExtensionSupported(XR_MNDX_FOVEATION_EXTENSION_NAME));
+      return SupportsStandardEyeTrackedFoveation();
     default:
       // By default we assume a feature doesn't need to be supported by an
       // extension unless customized above.
@@ -279,17 +275,6 @@ bool OpenXrExtensionHelper::SupportsStandardEyeTrackedFoveation() const {
   return SupportsStandardFoveation() &&
          IsExtensionSupported(XR_META_FOVEATION_EYE_TRACKED_EXTENSION_NAME) &&
          extension_methods_.xrGetFoveationEyeTrackedStateMETA;
-}
-
-std::optional<OpenXrFoveationPolicy>
-OpenXrExtensionHelper::GetFoveationPolicy(XrInstance instance,
-                                          XrSystemId system,
-                                          OpenXrFoveationLevel level) const {
-  if (!IsExtensionSupported(XR_MNDX_FOVEATION_EXTENSION_NAME)) {
-    return std::nullopt;
-  }
-  return QueryOpenXrFoveationPolicy(
-      instance, system, level, extension_methods_.xrGetFoveationProfileMNDX);
 }
 
 bool OpenXrExtensionHelper::IsExtensionSupported(

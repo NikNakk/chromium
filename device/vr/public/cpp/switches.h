@@ -33,10 +33,6 @@ extern const char kXrFoveationModeDynamic[];
 // as aliases). Used for both fixed and dynamic modes.
 COMPONENT_EXPORT(VR_FEATURES)
 extern const char kXrFoveationLevel[];
-// Legacy/custom XR_MNDX_foveation profile 0-5 (reference ... extreme). Only
-// used by the legacy Chromium-owned path; ignored by the standard path.
-COMPONENT_EXPORT(VR_FEATURES)
-extern const char kXrLegacyFoveationProfile[];
 }  // namespace device::switches
 
 #endif  // DEVICE_VR_PUBLIC_CPP_SWITCHES_H_

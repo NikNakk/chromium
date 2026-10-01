@@ -150,11 +150,18 @@ synchronization.
 
 ## Foveated rendering
 
-Chromium supports two foveation paths. Both keep raw gaze out of Blink, Mojo,
-ANGLE and IOSurface metadata; the GPU process only ever receives a resolved
-Metal rate-map recipe.
+Foveation is runtime-owned and uses the registered OpenXR extensions. Chromium
+never sees gaze: it creates no `XR_EXT_eye_gaze_interaction` action and does
+not enable that extension. Blink, Mojo, ANGLE and IOSurface metadata only ever
+carry a resolved Metal rate-map recipe.
 
-### Standard runtime-owned path (preferred)
+The earlier Chromium-owned path (the experimental `XR_MNDX_foveation` policy,
+a Chromium gaze action, a Chromium-built Metal map and a per-view composition
+map) has been removed, as the runtime removed that extension. If the
+extensions below are unavailable, or setup fails, the session is simply not
+foveated; a page that *required* `"dynamic-foveation"` is rejected.
+
+### Runtime-owned path
 
 Used when the runtime exposes `XR_FB_swapchain_update_state`,
 `XR_FB_foveation`, `XR_FB_foveation_configuration`, and
@@ -185,27 +192,14 @@ resolved recipe: 16+16 rates, logical and physical size
                 ANGLE Metal: MTLRasterizationRateMap
 ```
 
-No `XR_EXT_eye_gaze_interaction` action is created on this path.
-
 The packed view rectangles come from the same `GetProjectionViews()` code that
 fills `XrCompositionLayerProjectionView::subImage.imageRect`, so the map always
 describes the packed target that is submitted, including unequal views and
 non-zero offsets. Active secondary views are not foveated (the frame is
 rendered unfoveated instead).
 
-### Legacy Chromium-owned path (fallback)
-
-Used only when the standard path is unavailable or its setup fails: the
-runtime's `XR_MNDX_foveation` policy, a Chromium-owned
-`XR_EXT_eye_gaze_interaction` action (dynamic only), Chromium's own packed
-Metal map and an `XrCompositionLayerFoveationMapMNDX` with each projection view.
-It uses the same submitted rectangles, the same vertical flip and view-local
-profile extents (a view occupying half of the packed target is not given
-twice the intended extent). The gaze action is created only when this path can
-actually drive dynamic foveation.
-
 The FB profile is created before the base swapchain, so a profile failure
-leaves an ordinary swapchain for the legacy/unfoveated path.
+leaves an ordinary, unfoveated swapchain.
 
 ### Per-image correctness
 
@@ -255,19 +249,15 @@ These switches apply only to UA-owned immersive media, never to page WebXR:
 --xr-foveation-mode=dynamic --xr-foveation-level=high
 ```
 
-- `off`: no FB profile, no META eye tracking, no gaze action, no metadata;
+- `off`: no FB profile, no META eye tracking, no metadata;
 - `fixed`: standard FB foveation with the centre on each view's optical axis;
   no eye tracking;
-- `dynamic`: FB + META runtime-owned eye tracking (legacy fallback: Chromium
-  gaze action).
+- `dynamic`: FB + META runtime-owned eye tracking.
 
 `--xr-foveation-level` takes the standard `XR_FB_foveation` levels `low`,
 `medium` or `high` (default `high`; `0`, `1`, `2` are accepted as aliases).
 Fixed and dynamic use the same level, so they differ only in whether the
-centre follows gaze. The historical six custom profiles are legacy-only:
-`--xr-legacy-foveation-profile=0..5` (reference, strong, aggressive,
-aggressive-plus, near-extreme, extreme) overrides the level when the legacy
-path is in use and is ignored by the standard path.
+centre follows gaze.
 
 Note that with WebXR layers active the base projection layer is not rendered,
 so base-layer foveation does not apply to content drawn into layers.
@@ -551,8 +541,7 @@ Implemented on this branch:
   `raw `/`dfl8`, packed stereo, two-mesh custom stereo, and legacy `ytmp`;
 - YouTube EAC analytic reprojection as a metadata-missing compatibility fallback;
 - clean normal session exit/re-entry;
-- standard runtime-owned FB/META foveation with the Metal companion, plus the
-  legacy Chromium-owned fallback;
+- standard runtime-owned FB/META foveation with the Metal companion;
 - Metal/ANGLE variable-rasterization-rate rendering for IOSurface-backed WebGL
   XR targets, verified per image before release.
 

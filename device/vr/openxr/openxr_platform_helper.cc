@@ -196,7 +196,6 @@ XrResult OpenXrPlatformHelper::CreateInstance(XrInstance* instance,
   }
 
   EnableExtensionIfSupported(XR_EXT_FUTURE_EXTENSION_NAME);
-  EnableExtensionIfSupported(XR_EXT_EYE_GAZE_INTERACTION_EXTENSION_NAME);
   EnableExtensionIfSupported(OpenXrVisibilityMaskHandler::GetExtension());
 
   for (const auto& extension : handled_extensions) {

@@ -752,7 +752,8 @@ mojom::XRFrameDataPtr OpenXrRenderLoop::GetNextFrameData() {
   if (visibility_state_ == mojom::XRVisibilityState::VISIBLE) {
     // Dynamic foveation is session-scoped. UA-owned immersive media enables it
     // internally; page WebXR must explicitly request "dynamic-foveation".
-    // UpdateFoveation() keeps the gaze pose in the XR process.
+    // Gaze never reaches Chromium: the runtime resolves it and
+    // UpdateFoveation() only receives the resulting rate-map recipe.
     frame_data->input_state = openxr_->GetInputState();
     if (is_ua_immersive_media_session_ ||
         openxr_->IsFeatureEnabled(mojom::XRSessionFeature::DYNAMIC_FOVEATION)) {

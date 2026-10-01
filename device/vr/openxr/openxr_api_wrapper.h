@@ -234,8 +234,8 @@ class OpenXrApiWrapper {
   mojom::XRRuntimeSessionOptionsPtr session_options_;
 
   std::unique_ptr<OpenXRInputHelper> input_helper_;
-  std::optional<OpenXrFoveationPolicy> foveation_policy_;
-  // Registered FB/META path: policy and gaze are resolved by the runtime.
+  // Foveation uses the registered FB/META extensions: policy and gaze are
+  // resolved by the runtime.
   bool standard_foveation_enabled_ = false;
   bool standard_foveation_eye_tracked_ = false;
   XrFoveationProfileFB standard_foveation_profile_ = XR_NULL_HANDLE;
@@ -247,8 +247,6 @@ class OpenXrApiWrapper {
   // Set once the renderer failed to apply a published map; foveation stays
   // off for the rest of the session instead of toggling every frame.
   bool foveation_disabled_for_session_ = false;
-  // Legacy diagnostic fixed mode keeps the centre on each view's optical axis.
-  bool foveation_fixed_center_ = false;
 
   // OpenXR objects
 

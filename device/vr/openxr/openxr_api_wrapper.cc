@@ -62,68 +62,29 @@ namespace {
 // polled.
 constexpr base::TimeDelta kTimeBetweenPollingEvents = base::Seconds(1);
 
-// Foveation strength for one session. The standard path only has the three
-// registered XR_FB_foveation levels; the legacy path keeps its finer custom
-// profiles, defaulting to the one matching the standard level.
-struct FoveationStrength {
-  XrFoveationLevelFB standard = XR_FOVEATION_LEVEL_HIGH_FB;
-  OpenXrFoveationLevel legacy = OpenXrFoveationLevel::kAggressive;
-};
-
-OpenXrFoveationLevel LegacyProfileForStandardLevel(XrFoveationLevelFB level) {
-  switch (level) {
-    case XR_FOVEATION_LEVEL_LOW_FB:
-      return OpenXrFoveationLevel::kReference;
-    case XR_FOVEATION_LEVEL_MEDIUM_FB:
-      return OpenXrFoveationLevel::kStrong;
-    case XR_FOVEATION_LEVEL_HIGH_FB:
-      return OpenXrFoveationLevel::kAggressive;
-    default:
-      break;
-  }
-  NOTREACHED();
-}
-
 // Browser-owned immersive media diagnostics; page WebXR always uses the
-// default strength.
-FoveationStrength GetDiagnosticFoveationStrength() {
+// default level. These are the registered XR_FB_foveation levels.
+XrFoveationLevelFB GetDiagnosticFoveationLevel() {
   const base::CommandLine* command_line =
       base::CommandLine::ForCurrentProcess();
-  FoveationStrength strength;
-
-  if (command_line->HasSwitch(switches::kXrFoveationLevel)) {
-    const std::string value =
-        command_line->GetSwitchValueASCII(switches::kXrFoveationLevel);
-    if (value == "low" || value == "0") {
-      strength.standard = XR_FOVEATION_LEVEL_LOW_FB;
-    } else if (value == "medium" || value == "1") {
-      strength.standard = XR_FOVEATION_LEVEL_MEDIUM_FB;
-    } else if (value == "high" || value == "2") {
-      strength.standard = XR_FOVEATION_LEVEL_HIGH_FB;
-    } else {
-      LOG(WARNING) << "Ignoring invalid --" << switches::kXrFoveationLevel
-                   << "=" << value
-                   << "; expected low, medium or high (0-2). Legacy custom "
-                      "profiles use --"
-                   << switches::kXrLegacyFoveationProfile;
-    }
+  if (!command_line->HasSwitch(switches::kXrFoveationLevel)) {
+    return XR_FOVEATION_LEVEL_HIGH_FB;
   }
-  strength.legacy = LegacyProfileForStandardLevel(strength.standard);
 
-  if (command_line->HasSwitch(switches::kXrLegacyFoveationProfile)) {
-    const std::string value =
-        command_line->GetSwitchValueASCII(switches::kXrLegacyFoveationProfile);
-    int profile = 0;
-    if (base::StringToInt(value, &profile) && profile >= 0 &&
-        profile <= static_cast<int>(OpenXrFoveationLevel::kExtreme)) {
-      strength.legacy = static_cast<OpenXrFoveationLevel>(profile);
-    } else {
-      LOG(WARNING) << "Ignoring invalid --"
-                   << switches::kXrLegacyFoveationProfile << "=" << value
-                   << "; expected 0-5";
-    }
+  const std::string value =
+      command_line->GetSwitchValueASCII(switches::kXrFoveationLevel);
+  if (value == "low" || value == "0") {
+    return XR_FOVEATION_LEVEL_LOW_FB;
   }
-  return strength;
+  if (value == "medium" || value == "1") {
+    return XR_FOVEATION_LEVEL_MEDIUM_FB;
+  }
+  if (value == "high" || value == "2") {
+    return XR_FOVEATION_LEVEL_HIGH_FB;
+  }
+  LOG(WARNING) << "Ignoring invalid --" << switches::kXrFoveationLevel << "="
+               << value << "; expected low, medium or high (0-2)";
+  return XR_FOVEATION_LEVEL_HIGH_FB;
 }
 
 const char* GetXrSessionStateName(XrSessionState state) {
@@ -234,7 +195,6 @@ void OpenXrApiWrapper::Reset() {
 
   frame_state_ = {};
   input_helper_.reset();
-  foveation_policy_.reset();
   standard_foveation_enabled_ = false;
   standard_foveation_eye_tracked_ = false;
   // Uninitialize() destroys the profile before the session; Reset() never
@@ -245,7 +205,6 @@ void OpenXrApiWrapper::Reset() {
   standard_foveation_none_profile_ = XR_NULL_HANDLE;
   standard_foveation_selected_ = false;
   foveation_disabled_for_session_ = false;
-  foveation_fixed_center_ = false;
 
   session_options_.reset();
   on_session_started_callback_.Reset();
@@ -680,12 +639,9 @@ XrResult OpenXrApiWrapper::EnableSupportedFeatures(
         break;
 
       case mojom::XRSessionFeature::DYNAMIC_FOVEATION:
-        is_enabled =
-            (standard_foveation_enabled_ &&
-             standard_foveation_eye_tracked_ &&
-             standard_foveation_profile_ != XR_NULL_HANDLE) ||
-            (foveation_policy_.has_value() &&
-             graphics_binding_->SupportsDynamicFoveation());
+        is_enabled = standard_foveation_enabled_ &&
+                     standard_foveation_eye_tracked_ &&
+                     standard_foveation_profile_ != XR_NULL_HANDLE;
         break;
 
       case mojom::XRSessionFeature::REF_SPACE_VIEWER:
@@ -801,7 +757,6 @@ XrResult OpenXrApiWrapper::InitSession(
 
   bool ua_foveation_enabled = session_options_->is_ua_immersive_media;
   bool ua_dynamic_foveation = session_options_->is_ua_immersive_media;
-  foveation_fixed_center_ = false;
   if (session_options_->is_ua_immersive_media) {
     const base::CommandLine* command_line =
         base::CommandLine::ForCurrentProcess();
@@ -814,7 +769,6 @@ XrResult OpenXrApiWrapper::InitSession(
       ua_dynamic_foveation = false;
     } else if (mode == switches::kXrFoveationModeFixed) {
       ua_dynamic_foveation = false;
-      foveation_fixed_center_ = true;
     } else if (mode != switches::kXrFoveationModeDynamic) {
       LOG(WARNING) << "Ignoring invalid --" << switches::kXrFoveationMode
                    << "=" << mode << "; expected off, fixed, or dynamic";
@@ -826,6 +780,9 @@ XrResult OpenXrApiWrapper::InitSession(
   const bool wants_dynamic_foveation =
       ua_dynamic_foveation || page_dynamic_foveation_supported;
 
+  // Foveation is runtime-owned: XR_FB_foveation for policy and, for dynamic
+  // foveation, XR_META_foveation_eye_tracked, which keeps gaze inside the
+  // runtime. Chromium never creates an eye-gaze action.
   standard_foveation_enabled_ =
       allow_foveation &&
       (wants_dynamic_foveation
@@ -835,7 +792,7 @@ XrResult OpenXrApiWrapper::InitSession(
       standard_foveation_enabled_ && wants_dynamic_foveation;
 
   graphics_binding_->OnSessionCreated(local_space_, webgpu_session,
-                                      allow_foveation);
+                                      standard_foveation_enabled_);
 
   // Some graphics bindings (including the macOS direct-Metal path) have no
   // copy-based fallback: their OpenXR swapchain images must be exposed as
@@ -851,72 +808,47 @@ XrResult OpenXrApiWrapper::InitSession(
   bool swapchain_size_updated = RecomputeSwapchainSizeAndViewports();
   DCHECK(swapchain_size_updated);
 
-  // Fixed and dynamic modes use the same strength, so they differ only in
+  // Fixed and dynamic modes use the same level, so they differ only in
   // whether the centre follows gaze.
-  const FoveationStrength foveation_strength =
-      session_options_->is_ua_immersive_media ? GetDiagnosticFoveationStrength()
-                                              : FoveationStrength();
+  const XrFoveationLevelFB foveation_level =
+      session_options_->is_ua_immersive_media ? GetDiagnosticFoveationLevel()
+                                              : XR_FOVEATION_LEVEL_HIGH_FB;
 
   // Create the FB profile before the swapchain: the swapchain is only created
-  // foveation-capable once the standard path is known to be usable, so a
-  // failure here leaves an ordinary swapchain for the legacy/unfoveated path.
+  // foveation-capable once foveation is known to be usable, so a failure here
+  // leaves an ordinary, unfoveated swapchain.
   if (standard_foveation_enabled_) {
     const XrResult standard_result = CreateStandardFoveationProfile(
-        foveation_strength.standard, standard_foveation_eye_tracked_);
+        foveation_level, standard_foveation_eye_tracked_);
     if (XR_FAILED(standard_result)) {
-      DLOG(WARNING) << "Standard OpenXR foveation profile creation failed; "
-                       "falling back to legacy path, result="
+      DLOG(WARNING) << "OpenXR foveation profile creation failed; rendering "
+                       "unfoveated, result="
                     << standard_result;
       standard_foveation_enabled_ = false;
       standard_foveation_eye_tracked_ = false;
+      graphics_binding_->DisallowBaseLayerFoveation();
     }
   }
 
   // Swapchain must be created after size is updated.
   RETURN_IF_XR_FAILED(CreateSwapchain());
 
-  // The legacy runtime policy is only a fallback for sessions that allowed
-  // foveation but cannot use the standard path.
-  if (allow_foveation && !standard_foveation_enabled_) {
-    foveation_policy_ = extension_helper.GetFoveationPolicy(
-        instance_, system_, foveation_strength.legacy);
-  } else {
-    foveation_policy_.reset();
-  }
-
   const bool enable_hand_tracking =
       std::ranges::contains(session_options_->required_features,
                             device::mojom::XRSessionFeature::HAND_INPUT) ||
       std::ranges::contains(session_options_->optional_features,
                             device::mojom::XRSessionFeature::HAND_INPUT);
-  // Eye tracking remains privileged input. The standard path never needs a
-  // Chromium eye-gaze action: META keeps gaze inside the runtime. Only the
-  // legacy fallback, when it can actually drive dynamic foveation, creates
-  // one, and only for UA immersive media or a page that requested the
-  // permissioned dynamic-foveation feature. The gaze pose stays inside the
-  // XR process.
-  const bool enable_eye_gaze =
-      !standard_foveation_enabled_ && wants_dynamic_foveation &&
-      foveation_policy_.has_value() &&
-      graphics_binding_->SupportsDynamicFoveation();
-
   RETURN_IF_XR_FAILED(OpenXRInputHelper::CreateOpenXRInputHelper(
-      instance_, system_, system_properties.systemName, extension_helper,
-      session_, local_space_, enable_hand_tracking, enable_eye_gaze,
-      &input_helper_));
+      instance_, system_properties.systemName, extension_helper, session_,
+      local_space_, enable_hand_tracking, &input_helper_));
 
-  // Keep policy selection above the graphics backend. Browser-owned
-  // immersive media has diagnostic off/fixed/dynamic controls. Page WebXR
-  // remains dynamic-only and requires the permissioned session feature.
+  // Browser-owned immersive media has diagnostic off/fixed/dynamic controls.
+  // Page WebXR is dynamic-only and requires the permissioned session feature.
   DVLOG(1) << "XR foveation: ua_immersive_media="
            << session_options_->is_ua_immersive_media
-           << " standard=" << standard_foveation_enabled_
+           << " enabled=" << standard_foveation_enabled_
            << " eye_tracked=" << standard_foveation_eye_tracked_
-           << " legacy=" << foveation_policy_.has_value()
-           << " legacy_eye_gaze=" << enable_eye_gaze
-           << " fixed_legacy=" << foveation_fixed_center_
-           << " fb_level=" << foveation_strength.standard
-           << " legacy_profile=" << static_cast<int>(foveation_strength.legacy);
+           << " fb_level=" << foveation_level;
 
   // Make sure all of the objects we initialized are there.
   DCHECK(HasSession());
@@ -1572,8 +1504,7 @@ XrResult OpenXrApiWrapper::EndFrame() {
   DCHECK(HasSpace(XR_REFERENCE_SPACE_TYPE_LOCAL));
   DCHECK(HasFrameState());
 
-  // Must run before the layers (and their legacy foveation maps) are built
-  // and before the base image is released to the runtime.
+  // Must run before the base image is released to the runtime.
   VerifyFoveationBeforeRelease();
 
   // Get all the XrCompositionLayer* from the base layer or the
@@ -1904,7 +1835,7 @@ void OpenXrApiWrapper::SuspendFoveation() {
 
 void OpenXrApiWrapper::VerifyFoveationBeforeRelease() {
   if (!graphics_binding_->IsBaseLayerRendered() ||
-      (!standard_foveation_enabled_ && !foveation_policy_)) {
+      !standard_foveation_enabled_) {
     return;
   }
 
@@ -1916,153 +1847,49 @@ void OpenXrApiWrapper::VerifyFoveationBeforeRelease() {
   // The renderer drew this image unfoveated (for example ANGLE refused the
   // recipe, or the content did not go through the patched ANGLE path).
   // Composite it unfoveated too, and stop foveating for this session.
-  const bool compositor_expects_foveation =
-      standard_foveation_enabled_
-          ? standard_foveation_selected_
-          : graphics_binding_->HasBaseLayerFoveationMapping();
   if (status == OpenXrGraphicsBinding::FoveationRenderStatus::kNone &&
-      !compositor_expects_foveation) {
+      !standard_foveation_selected_) {
     return;
   }
   LOG(ERROR) << "XR foveation was not applied by the renderer; compositing "
                 "this frame unfoveated and disabling foveation for the session";
-  if (standard_foveation_enabled_) {
-    ApplyStandardFoveationNone();
-  }
+  ApplyStandardFoveationNone();
   graphics_binding_->ClearBaseLayerFoveation();
   foveation_disabled_for_session_ = true;
 }
 
 void OpenXrApiWrapper::UpdateFoveation() {
-  auto disable_foveation = [this]() {
-    graphics_binding_->ClearBaseLayerFoveation();
-  };
+  if (!standard_foveation_enabled_) {
+    return;
+  }
 
   if (foveation_disabled_for_session_) {
     ClearFoveationForFrame();
     return;
   }
 
-  if (standard_foveation_enabled_) {
-    // Nothing renders into the base layer this frame (e.g. WebXR layers are
-    // active); leave the runtime state alone rather than toggle it.
-    if (!graphics_binding_->HasBaseLayerActiveImage()) {
-      return;
-    }
-    // The runtime handed back the image it is still presenting. It already
-    // carries the map it was rendered with (pixels, IOSurface metadata and
-    // runtime binding agree). Querying a new map now would make the runtime
-    // bind that newer map when this image is re-released unrendered, so
-    // leave all three untouched for this frame.
-    if (graphics_binding_->IsBaseLayerActiveImageLastReleased()) {
-      return;
-    }
-    if (!UpdateStandardFoveation()) {
-      // Failures here are configuration problems, not transient gaze loss
-      // (the runtime falls back to a fixed centre itself). Switching the
-      // runtime between profiles every frame would also restart its eye
-      // tracker, so stay unfoveated for the rest of the session.
-      LOG(ERROR) << "Standard OpenXR foveation update failed; disabling "
-                    "foveation for this session";
-      ClearFoveationForFrame();
-      foveation_disabled_for_session_ = true;
-    }
+  // Nothing renders into the base layer this frame (e.g. WebXR layers are
+  // active); leave the runtime state alone rather than toggle it.
+  if (!graphics_binding_->HasBaseLayerActiveImage()) {
     return;
   }
-
-  if (!foveation_policy_ || !HasFrameState() ||
-      primary_view_config_.Views().empty()) {
-    disable_foveation();
+  // The runtime handed back the image it is still presenting. It already
+  // carries the map it was rendered with (pixels, IOSurface metadata and
+  // runtime binding agree). Querying a new map now would make the runtime
+  // bind that newer map when this image is re-released unrendered, so leave
+  // all three untouched for this frame.
+  if (graphics_binding_->IsBaseLayerActiveImageLastReleased()) {
     return;
   }
-
-  float tangent_x = 0.0f;
-  float tangent_y = 0.0f;
-  if (!foveation_fixed_center_) {
-    if (!input_helper_) {
-      disable_foveation();
-      return;
-    }
-    const std::optional<XrPosef> gaze_pose = input_helper_->GetEyeGazePose(
-        view_space_, frame_state_.predictedDisplayTime);
-    if (!gaze_pose) {
-      disable_foveation();
-      return;
-    }
-
-    // TransformVector() is no longer part of gfx::Transform. Use homogeneous
-    // vector coordinates with w=0 so this remains a direction rather than a
-    // point if translation is ever introduced into the transform.
-    std::array<float, 4> direction = {0.0f, 0.0f, -1.0f, 0.0f};
-    gfx::Transform gaze_rotation(gfx::Quaternion(
-        gaze_pose->orientation.x, gaze_pose->orientation.y,
-        gaze_pose->orientation.z, gaze_pose->orientation.w));
-    gaze_rotation.TransformVector4(direction);
-
-    const float horizontal_length =
-        std::sqrt(direction[0] * direction[0] + direction[2] * direction[2]);
-    if (horizontal_length <= 1e-6f || direction[2] >= -1e-6f) {
-      disable_foveation();
-      return;
-    }
-
-    tangent_x = direction[0] / -direction[2];
-    tangent_y = direction[1] / horizontal_length;
-  }
-
-  std::vector<gfx::PointF> target_centers;
-  std::vector<gfx::SizeF> view_extents;
-  target_centers.reserve(primary_view_config_.Views().size());
-  view_extents.reserve(primary_view_config_.Views().size());
-  const gfx::Size target_size =
-      graphics_binding_->GetProjectionLayerSwapchainImageSize();
-  // Place each centre in the rectangle the frame actually submits, from the
-  // same code that fills subImage.imageRect.
-  const std::vector<XrRect2Di> image_rects =
-      graphics_binding_->GetBaseLayerSubmittedImageRects(primary_view_config_);
-  if (target_size.IsEmpty() ||
-      image_rects.size() != primary_view_config_.Views().size()) {
-    disable_foveation();
-    return;
-  }
-  // WebGL content is stored bottom-up and submitted with a vertical flip.
-  const bool vertically_flipped =
-      graphics_binding_->IsBaseLayerStoredVerticallyFlipped();
-
-  for (size_t i = 0; i < primary_view_config_.Views().size(); ++i) {
-    const XrView& view = primary_view_config_.Views()[i];
-    const float left = std::tan(view.fov.angleLeft);
-    const float right = std::tan(view.fov.angleRight);
-    const float down = std::tan(view.fov.angleDown);
-    const float up = std::tan(view.fov.angleUp);
-    if (!(right > left) || !(up > down)) {
-      disable_foveation();
-      return;
-    }
-
-    const float center_x =
-        std::clamp((tangent_x - left) / (right - left), 0.0f, 1.0f);
-    float center_y =
-        std::clamp(1.0f - (tangent_y - down) / (up - down), 0.0f, 1.0f);
-    if (vertically_flipped) {
-      center_y = 1.0f - center_y;
-    }
-
-    const XrRect2Di& rect = image_rects[i];
-    target_centers.emplace_back(
-        (rect.offset.x + center_x * rect.extent.width) / target_size.width(),
-        (rect.offset.y + center_y * rect.extent.height) /
-            target_size.height());
-    view_extents.emplace_back(
-        static_cast<float>(rect.extent.width) / target_size.width(),
-        static_cast<float>(rect.extent.height) / target_size.height());
-  }
-
-  // Build the compositor-side mirror and publish the renderer-side rate map
-  // metadata together. No gaze coordinates cross into the renderer process.
-  if (!graphics_binding_->ConfigureBaseLayerFoveation(
-          *foveation_policy_, target_centers, view_extents)) {
-    disable_foveation();
+  if (!UpdateStandardFoveation()) {
+    // Failures here are configuration problems, not transient gaze loss (the
+    // runtime falls back to a fixed centre itself). Switching the runtime
+    // between profiles every frame would also restart its eye tracker, so
+    // stay unfoveated for the rest of the session.
+    LOG(ERROR) << "OpenXR foveation update failed; disabling foveation for "
+                  "this session";
+    ClearFoveationForFrame();
+    foveation_disabled_for_session_ = true;
   }
 }
 

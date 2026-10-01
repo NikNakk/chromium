@@ -38,7 +38,6 @@ struct OpenXrExtensionMethods {
   ~OpenXrExtensionMethods();
   // General Methods
   OPENXR_DECLARE_FN(xrPollFutureEXT);
-  OPENXR_DECLARE_FN(xrGetFoveationProfileMNDX);
   OPENXR_DECLARE_FN(xrCreateFoveationProfileFB);
   OPENXR_DECLARE_FN(xrDestroyFoveationProfileFB);
   OPENXR_DECLARE_FN(xrUpdateSwapchainFB);
@@ -162,10 +161,6 @@ class OpenXrExtensionHelper {
     return extension_methods_;
   }
 
-  std::optional<OpenXrFoveationPolicy> GetFoveationPolicy(
-      XrInstance instance,
-      XrSystemId system,
-      OpenXrFoveationLevel level) const;
 
   // Standard registered control plane plus the experimental Metal-only
   // rendering transport. The eye-tracked variant deliberately does not
